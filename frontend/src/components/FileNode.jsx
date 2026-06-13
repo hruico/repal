@@ -19,29 +19,31 @@ export default function FileNode({ data, selected }) {
 
   return (
     <div style={{
-      border: `${selected ? 2 : 1}px solid ${color}`,
-      borderRadius: 8,
-      padding: '8px 14px',
       background: '#fff',
+      border: `2px solid ${selected ? color : '#e2e8f0'}`,
+      borderRadius: 8,
+      padding: '8px 12px',
+      minWidth: 140,
+      maxWidth: 200,
       boxShadow: selected
-        ? `0 0 0 3px ${color}33, 0 2px 8px rgba(0,0,0,0.1)`
-        : '0 1px 4px rgba(0,0,0,0.08)',
-      minWidth: 150,
-      fontFamily: 'monospace',
-      fontSize: 12,
+        ? `0 0 0 3px ${color}25`
+        : '0 1px 3px rgba(0,0,0,0.08)',
       cursor: 'pointer',
-      transition: 'box-shadow 0.15s',
     }}>
-      <Handle type="target" position={Position.Top} style={{ background: color }} />
-      <div style={{ fontWeight: 700, color, fontSize: 13, marginBottom: 3 }}>
+      <Handle type="target" position={Position.Top}
+        style={{ background: color, width: 8, height: 8, border: '2px solid #fff' }} />
+
+      <div style={{ fontWeight: 700, fontSize: 12, color: '#1e293b', marginBottom: 2, fontFamily: 'monospace', lineHeight: 1.3 }}>
         {data.label}
       </div>
-      <div style={{ color: '#9ca3af', fontSize: 11 }}>
-        {data.extension}
+      <div style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>
+        <span style={{ color, fontWeight: 600 }}>{data.extension}</span>
         {' · '}{data.loc} LoC
         {data.complexity != null && ` · CC ${data.complexity}`}
       </div>
-      <Handle type="source" position={Position.Bottom} style={{ background: color }} />
+
+      <Handle type="source" position={Position.Bottom}
+        style={{ background: color, width: 8, height: 8, border: '2px solid #fff' }} />
     </div>
   );
 }
