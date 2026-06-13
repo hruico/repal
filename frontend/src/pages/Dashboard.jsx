@@ -37,7 +37,7 @@ export default function Dashboard() {
               <path d="M2 17l10 5 10-5" stroke="var(--indigo)" strokeWidth="2" strokeLinejoin="round"/>
               <path d="M2 12l10 5 10-5" stroke="#a78bfa" strokeWidth="2" strokeLinejoin="round"/>
             </svg>
-            <span style={brandName}>Depsight</span>
+            <span style={brandName}>repal</span>
             <span style={brandBadge}>local</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>

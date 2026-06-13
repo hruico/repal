@@ -1,10 +1,10 @@
-# Depsight
+# repal
 
 A local developer tool that maps any Git repository into an interactive dependency graph — with per-file complexity metrics and AI-powered summaries, running entirely on your machine.
 
 ```
 git clone ...
-cd depsight
+cd repal
 # start backend + frontend → open http://localhost:5173
 ```
 
@@ -100,7 +100,7 @@ Open **http://localhost:8000** — FastAPI serves the built React app. No Vite, 
 ## Project structure
 
 ```
-depsight/
+repal/
 ├── backend/
 │   ├── main.py                  # FastAPI app — all routes
 │   ├── store.py                 # Repo registry (repos.json)

@@ -19,7 +19,7 @@ from ai.summarizer import summarize_file
 
 load_dotenv()
 
-app = FastAPI(title="Depsight")
+app = FastAPI(title="repal")
 
 app.add_middleware(
     CORSMiddleware,
