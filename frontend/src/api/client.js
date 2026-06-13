@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:8000/api';
+const BASE = '/api';
 
 export const api = {
   listRepos: () =>
@@ -25,10 +25,39 @@ export const api = {
       return data;
     }),
 
+  getTree: (id) =>
+    fetch(`${BASE}/repos/${id}/tree`).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Failed to load tree');
+      return data;
+    }),
+
   summarize: (repoId, fileId) =>
     fetch(`${BASE}/repos/${repoId}/summarize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_id: fileId }),
-    }).then(r => r.json()),
+    }).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Summarization failed');
+      return data;
+    }),
+
+  preview: (repoId, fileId) =>
+    fetch(`${BASE}/repos/${repoId}/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_id: fileId }),
+    }).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Preview failed');
+      return data;
+    }),
+
+  exportCsv: (id, name) => {
+    const a = document.createElement('a');
+    a.href = `${BASE}/repos/${id}/export`;
+    a.download = `${name}_metrics.csv`;
+    a.click();
+  },
 };

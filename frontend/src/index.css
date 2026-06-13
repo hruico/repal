@@ -1,14 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
 *, *::before, *::after {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-body {
-  margin: 0;
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+:root {
+  --bg0:    #0d1117;
+  --bg1:    #161b22;
+  --bg2:    #21262d;
+  --border: #30363d;
+
+  --indigo:     #818cf8;
+  --indigo-dim: #312e81;
+  --amber:      #fbbf24;
+  --green:      #34d399;
+  --red:        #f87171;
+  --teal:       #2dd4bf;
+
+  --text1: #e6edf3;
+  --text2: #8b949e;
+  --text3: #484f58;
+
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+
+  color-scheme: dark;
+}
+
+html, body {
+  background: var(--bg0);
+  color: var(--text1);
+  font-family: var(--font-sans);
   font-size: 14px;
-  background: #f8fafc;
-  color: #111827;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -16,38 +48,81 @@ body {
   min-height: 100vh;
 }
 
-h1, h2, h3, h4, p { margin: 0; }
+/* ── Typography resets ──────────────────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6, p { margin: 0; }
 
-code {
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 13px;
-  background: #f1f5f9;
-  padding: 2px 6px;
-  border-radius: 4px;
-  color: #334155;
+code, pre {
+  font-family: var(--font-mono);
 }
 
-button:focus-visible {
-  outline: 2px solid #6366f1;
+code {
+  font-size: 12px;
+  background: var(--bg2);
+  color: var(--indigo);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg0); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* ── Focus ──────────────────────────────────────────────────────────────────── */
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--indigo);
   outline-offset: 2px;
 }
 
-input:focus {
+input, select {
   outline: none;
-  border-color: #6366f1 !important;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.12);
 }
 
+/* ── React Flow dark overrides ──────────────────────────────────────────────── */
+.react-flow__background {
+  background: var(--bg0) !important;
+}
+.react-flow__minimap {
+  background: var(--bg1) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-md) !important;
+}
+.react-flow__minimap-mask {
+  fill: rgba(13, 17, 23, 0.75) !important;
+}
+.react-flow__controls {
+  background: var(--bg1) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-md) !important;
+  box-shadow: none !important;
+}
+.react-flow__controls-button {
+  background: var(--bg1) !important;
+  border-bottom: 1px solid var(--border) !important;
+  color: var(--text2) !important;
+  fill: var(--text2) !important;
+}
+.react-flow__controls-button:hover {
+  background: var(--bg2) !important;
+}
+.react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+/* ── Animations ─────────────────────────────────────────────────────────────── */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }

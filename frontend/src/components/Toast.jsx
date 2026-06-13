@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
+import { T } from '../theme';
 
-// Simple self-contained toast — call window.__toast('message', 'success'|'error')
 let _setToasts = null;
 
 export function toast(message, type = 'success') {
@@ -15,13 +15,16 @@ export function toast(message, type = 'success') {
 
 export default function ToastContainer() {
   const [toasts, setToasts] = useState([]);
-  useEffect(() => { _setToasts = setToasts; return () => { _setToasts = null; }; }, []);
+  useEffect(() => {
+    _setToasts = setToasts;
+    return () => { _setToasts = null; };
+  }, []);
 
   return (
     <div style={container}>
       {toasts.map(t => (
-        <div key={t.id} style={t.type === 'error' ? { ...toastBase, ...errorStyle } : { ...toastBase, ...successStyle }}>
-          <span style={{ fontSize: 14 }}>{t.type === 'error' ? '✕' : '✓'}</span>
+        <div key={t.id} style={t.type === 'error' ? errToast : okToast}>
+          <span>{t.type === 'error' ? '✕' : '✓'}</span>
           {t.message}
         </div>
       ))}
@@ -34,12 +37,22 @@ const container = {
   display: 'flex', flexDirection: 'column', gap: 8,
   zIndex: 1000, pointerEvents: 'none',
 };
-const toastBase = {
+const base = {
   display: 'flex', alignItems: 'center', gap: 10,
-  padding: '10px 16px', borderRadius: 8,
+  padding: '10px 16px', borderRadius: 'var(--r-md)',
   fontSize: 13, fontWeight: 500,
-  boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
   animation: 'slideUp 0.2s ease',
+  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
 };
-const successStyle = { background: '#1e293b', color: '#f8fafc' };
-const errorStyle = { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' };
+const okToast = {
+  ...base,
+  background: T.bg2,
+  border: `1px solid ${T.border}`,
+  color: T.textPrimary,
+};
+const errToast = {
+  ...base,
+  background: 'rgba(248,113,113,0.1)',
+  border: `1px solid rgba(248,113,113,0.3)`,
+  color: T.red,
+};

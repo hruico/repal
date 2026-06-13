@@ -17,6 +17,12 @@ def get_dependencies(file_meta: dict, all_files: list[dict]) -> list[str]:
         raw = _parse_js(content)
     elif ext in {'.c', '.cpp', '.h'}:
         raw = _parse_c(content)
+    elif ext == '.java':
+        raw = _parse_java(content)
+    elif ext == '.go':
+        raw = _parse_go(content)
+    elif ext == '.rs':
+        raw = _parse_rust(content)
     else:
         raw = []
 
@@ -61,3 +67,24 @@ def _resolve(raw: list[str], source: dict, all_files: list[dict]) -> list[str]:
                 resolved.append(file_id)
                 break
     return resolved
+
+
+def _parse_java(content: str) -> list[str]:
+    # "import com.example.utils.Helper;" → "com/example/utils/Helper"
+    return [
+        m.replace('.', '/')
+        for m in re.findall(r'^import\s+(?:static\s+)?([\w.]+);', content, re.MULTILINE)
+    ]
+
+
+def _parse_go(content: str) -> list[str]:
+    singles = re.findall(r'import\s+"([^"]+)"', content)
+    blocks  = re.findall(r'"([^"]+)"',
+                         ''.join(re.findall(r'import\s*\(([^)]+)\)', content, re.DOTALL)))
+    return singles + blocks
+
+
+def _parse_rust(content: str) -> list[str]:
+    uses = re.findall(r'^use\s+([\w:]+)', content, re.MULTILINE)
+    mods = re.findall(r'^mod\s+(\w+)', content, re.MULTILINE)
+    return [u.replace('::', '/') for u in uses] + mods

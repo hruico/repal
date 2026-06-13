@@ -1,39 +1,54 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api/client';
-import { EXT_COLORS } from './FileNode';
+import { T } from '../theme';
+import { nodeColor } from './FileNode';
 
 export default function SidePanel({ selectedNode, repoId, onClose }) {
+  const [tab, setTab]         = useState('metrics');
   const [summary, setSummary] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [preview, setPreview] = useState('');
+  const [loadingAI, setLoadingAI]   = useState(false);
+  const [loadingPre, setLoadingPre] = useState(false);
+  const [errorAI, setErrorAI]   = useState('');
   const lastIdRef = useRef('');
 
   useEffect(() => {
     if (!selectedNode || selectedNode.id === lastIdRef.current) return;
     lastIdRef.current = selectedNode.id;
-    setSummary('');
-    setError('');
-    setLoading(true);
+    setSummary(''); setPreview('');
+    setErrorAI('');
+
+    // Fetch AI summary
+    setLoadingAI(true);
     api.summarize(repoId, selectedNode.data.full_path)
       .then(res => setSummary(res.summary))
-      .catch(() => setError('Summarization failed. Check GROQ_API_KEY in .env'))
-      .finally(() => setLoading(false));
+      .catch(e => {
+        setErrorAI(e.message);
+        lastIdRef.current = '';
+      })
+      .finally(() => setLoadingAI(false));
+
+    // Fetch preview
+    setLoadingPre(true);
+    api.preview(repoId, selectedNode.data.full_path)
+      .then(res => setPreview(res.content))
+      .catch(() => {})
+      .finally(() => setLoadingPre(false));
   }, [selectedNode, repoId]);
 
-  /* Empty state — panel still renders so layout doesn't shift */
   if (!selectedNode) {
     return (
       <div style={panel}>
-        <div style={emptyState}>
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" style={{ marginBottom: 12 }}>
+        <div style={emptyWrap}>
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
+            stroke={T.textMuted} strokeWidth="1.2" style={{ marginBottom: 14 }}>
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
             <polyline points="14 2 14 8 20 8"/>
             <line x1="16" y1="13" x2="8" y2="13"/>
             <line x1="16" y1="17" x2="8" y2="17"/>
-            <polyline points="10 9 9 9 8 9"/>
           </svg>
-          <p style={{ fontSize: 13, color: '#94a3b8', textAlign: 'center', lineHeight: 1.6 }}>
-            Select a file node to see metrics and an AI summary
+          <p style={{ fontSize: 12, color: T.textMuted, textAlign: 'center', lineHeight: 1.7 }}>
+            Click a node to inspect it
           </p>
         </div>
       </div>
@@ -41,72 +56,118 @@ export default function SidePanel({ selectedNode, repoId, onClose }) {
   }
 
   const d = selectedNode.data;
-  const color = EXT_COLORS[d.extension] || '#6b7280';
+  const color = d.in_cycle ? T.red : nodeColor(d, 'ext');
 
   return (
-    <div style={{ ...panel, animation: 'slideIn 0.18s ease' }}>
+    <div style={{ ...panel, animation: 'slideIn 0.16s ease' }}>
+      {/* Accent stripe */}
+      <div style={{ height: 2, background: `linear-gradient(90deg, ${color} 0%, transparent 100%)` }} />
+
       {/* Header */}
-      <div style={panelHeader}>
-        <div style={{ ...colorStripe, background: color }} />
-        <div style={headerBody}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
-            <span style={fileName}>{d.label}</span>
-            <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
+      <div style={header}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={fname}>{d.label}</div>
+          <div style={fpath}>{d.full_path}</div>
+        </div>
+        <button onClick={onClose} style={closeBtn} aria-label="Close">✕</button>
+      </div>
+
+      {/* Tabs */}
+      <div style={tabBar}>
+        {['metrics', 'ai', 'preview'].map(t => (
+          <button key={t} onClick={() => setTab(t)} style={tabBtn(t === tab)}>
+            {t === 'ai' ? 'AI' : t === 'metrics' ? 'Metrics' : 'Preview'}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Metrics tab ── */}
+      {tab === 'metrics' && (
+        <div style={tabContent}>
+          <MRow label="Type">
+            <Tag color={color}>{d.extension}</Tag>
+          </MRow>
+          <MRow label="Lines of Code">
+            <Num value={d.loc}
+              color={d.loc > 300 ? T.red : d.loc > 150 ? T.amber : T.green} />
+          </MRow>
+          <MRow label="Complexity">
+            {d.complexity != null
+              ? <Num value={d.complexity}
+                  color={d.complexity > 10 ? T.red : d.complexity > 5 ? T.amber : T.green} />
+              : <span style={{ fontSize: 11, color: T.textMuted }}>Python only</span>
+            }
+          </MRow>
+          {d.in_degree != null && (
+            <MRow label="Imports">
+              <span style={{ fontSize: 12, color: T.textSecondary, fontFamily: 'var(--font-mono)' }}>
+                ↑{d.out_degree} out · ↓{d.in_degree} in
+              </span>
+            </MRow>
+          )}
+
+          {d.in_cycle && (
+            <div style={cycleBox}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                stroke={T.red} strokeWidth="2" style={{ flexShrink: 0 }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+              Part of a circular dependency
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── AI tab ── */}
+      {tab === 'ai' && (
+        <div style={tabContent}>
+          <div style={aiLabel}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+              stroke={T.indigo} strokeWidth="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            Groq · llama-3.1-8b
           </div>
-          <span style={filePath}>{d.full_path}</span>
+          {loadingAI && (
+            <div style={spinRow}>
+              <div style={spin} /> Analyzing…
+            </div>
+          )}
+          {errorAI && <div style={errBox}>{errorAI}</div>}
+          {!loadingAI && !errorAI && summary && (
+            <p style={summaryText}>{summary}</p>
+          )}
+          {!loadingAI && !errorAI && !summary && (
+            <p style={mutedTxt}>No summary yet.</p>
+          )}
         </div>
-      </div>
+      )}
 
-      {/* Metrics */}
-      <div style={section}>
-        <div style={sectionLabel}>Metrics</div>
-        <Row label="File type">
-          <Tag color={color}>{d.extension}</Tag>
-        </Row>
-        <Row label="Lines of Code">
-          <Value style={locStyle(d.loc)}>{d.loc}</Value>
-        </Row>
-        <Row label="Cyclomatic Complexity">
-          {d.complexity != null
-            ? <Value style={ccStyle(d.complexity)}>{d.complexity}</Value>
-            : <span style={{ color: '#94a3b8', fontSize: 12 }}>Python only</span>
-          }
-        </Row>
-      </div>
-
-      <div style={sep} />
-
-      {/* AI Summary */}
-      <div style={section}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <div style={sectionLabel}>AI Summary</div>
-          {loading && <div style={miniSpin} />}
+      {/* ── Preview tab ── */}
+      {tab === 'preview' && (
+        <div style={{ ...tabContent, padding: 0, flex: 1, overflow: 'hidden' }}>
+          {loadingPre && <p style={{ ...mutedTxt, padding: 16 }}>Loading…</p>}
+          {!loadingPre && preview && (
+            <pre style={preCode}>{preview}</pre>
+          )}
+          {!loadingPre && !preview && (
+            <p style={{ ...mutedTxt, padding: 16 }}>No preview available.</p>
+          )}
         </div>
-
-        {loading && (
-          <p style={mutedText}>Calling Groq…</p>
-        )}
-        {error && (
-          <div style={errBox}>{error}</div>
-        )}
-        {!loading && !error && summary && (
-          <p style={summaryText}>{summary}</p>
-        )}
-        {!loading && !error && !summary && (
-          <p style={mutedText}>No summary yet.</p>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-/* ── Sub-components ────────────────────────────────────────────────────────── */
+/* ── Sub-components ─────────────────────────────────────────────────────────── */
 
-function Row({ label, children }) {
+function MRow({ label, children }) {
   return (
-    <div style={rowStyle}>
-      <span style={rowKey}>{label}</span>
-      <span style={rowVal}>{children}</span>
+    <div style={mrow}>
+      <span style={{ color: T.textSecondary, fontSize: 12 }}>{label}</span>
+      <span>{children}</span>
     </div>
   );
 }
@@ -114,95 +175,107 @@ function Row({ label, children }) {
 function Tag({ color, children }) {
   return (
     <span style={{
-      background: `${color}18`, color,
-      padding: '2px 7px', borderRadius: 4,
-      fontSize: 11, fontWeight: 700,
-      fontFamily: 'ui-monospace, Consolas, monospace',
+      fontSize: 11, padding: '2px 7px', borderRadius: 4,
+      background: `${color}18`, color, border: `1px solid ${color}28`,
+      fontFamily: 'var(--font-mono)', fontWeight: 600,
     }}>
       {children}
     </span>
   );
 }
 
-function Value({ style, children }) {
-  return <span style={{ fontSize: 13, fontWeight: 600, ...style }}>{children}</span>;
+function Num({ value, color }) {
+  return (
+    <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: 'var(--font-mono)' }}>
+      {value}
+    </span>
+  );
 }
 
-/* ── Helpers ───────────────────────────────────────────────────────────────── */
-
-const locStyle = loc =>
-  loc > 300 ? { color: '#ef4444' } :
-  loc > 150 ? { color: '#f59e0b' } : { color: '#16a34a' };
-
-const ccStyle = cc =>
-  cc > 10 ? { color: '#ef4444' } :
-  cc > 5  ? { color: '#f59e0b' } : { color: '#16a34a' };
-
-/* ── Styles ────────────────────────────────────────────────────────────────── */
+/* ── Styles ─────────────────────────────────────────────────────────────────── */
 
 const panel = {
-  width: 300, flexShrink: 0,
-  borderLeft: '1px solid #e2e8f0',
-  background: '#fff', overflowY: 'auto',
+  width: 280, flexShrink: 0,
+  borderLeft: `1px solid ${T.border}`,
+  background: T.bg1,
   display: 'flex', flexDirection: 'column',
+  overflow: 'hidden',
 };
-const emptyState = {
+const emptyWrap = {
   flex: 1, display: 'flex', flexDirection: 'column',
-  alignItems: 'center', justifyContent: 'center',
-  padding: 32,
+  alignItems: 'center', justifyContent: 'center', padding: 24,
 };
-const panelHeader = {
-  borderBottom: '1px solid #f1f5f9',
+const header = {
+  padding: '12px 14px 10px',
+  borderBottom: `1px solid ${T.border}`,
+  display: 'flex', gap: 8, alignItems: 'flex-start',
 };
-const colorStripe = {
-  height: 3, width: '100%',
+const fname = {
+  fontWeight: 600, fontSize: 13, color: T.textPrimary,
+  fontFamily: 'var(--font-mono)', wordBreak: 'break-word', lineHeight: 1.4,
 };
-const headerBody = {
-  padding: '14px 16px 12px',
-};
-const fileName = {
-  fontWeight: 700, fontSize: 13,
-  color: '#0f172a', fontFamily: 'ui-monospace, Consolas, monospace',
-  wordBreak: 'break-word', lineHeight: 1.4, flex: 1,
-};
-const filePath = {
-  display: 'block', marginTop: 4,
-  fontSize: 10, color: '#94a3b8',
-  fontFamily: 'ui-monospace, Consolas, monospace',
-  wordBreak: 'break-all', lineHeight: 1.5,
+const fpath = {
+  fontSize: 10, color: T.textMuted,
+  fontFamily: 'var(--font-mono)', wordBreak: 'break-all',
+  marginTop: 3, lineHeight: 1.5,
 };
 const closeBtn = {
+  background: 'none', border: 'none', cursor: 'pointer',
+  fontSize: 12, color: T.textMuted, padding: '2px 4px', flexShrink: 0,
+};
+const tabBar = {
+  display: 'flex', borderBottom: `1px solid ${T.border}`,
+  flexShrink: 0,
+};
+const tabBtn = (active) => ({
+  flex: 1, padding: '8px 0',
   background: 'none', border: 'none',
-  cursor: 'pointer', fontSize: 13,
-  color: '#94a3b8', flexShrink: 0,
-  padding: '2px 4px', lineHeight: 1,
+  borderBottom: active ? `2px solid ${T.indigo}` : '2px solid transparent',
+  cursor: 'pointer', fontSize: 11, fontWeight: active ? 600 : 400,
+  color: active ? T.indigo : T.textSecondary,
+  fontFamily: 'var(--font-sans)',
+  transition: 'color 0.15s',
+  marginBottom: -1,
+});
+const tabContent = { padding: '14px', overflowY: 'auto', flex: 1 };
+const mrow = {
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  padding: '8px 0', borderBottom: `1px solid ${T.border}`,
 };
-const section = { padding: '14px 16px' };
-const sectionLabel = {
-  fontSize: 10, fontWeight: 700, color: '#64748b',
-  textTransform: 'uppercase', letterSpacing: '0.5px',
-  marginBottom: 10,
+const cycleBox = {
+  marginTop: 12, padding: '8px 10px',
+  background: `${T.red}0d`, border: `1px solid ${T.red}28`,
+  borderRadius: 6, color: T.red, fontSize: 12, lineHeight: 1.5,
+  display: 'flex', gap: 8, alignItems: 'flex-start',
 };
-const rowStyle = {
-  display: 'flex', justifyContent: 'space-between',
-  alignItems: 'center', marginBottom: 9, fontSize: 13,
+const aiLabel = {
+  display: 'flex', alignItems: 'center', gap: 6,
+  fontSize: 10, color: T.textMuted, fontFamily: 'var(--font-mono)',
+  marginBottom: 12,
 };
-const rowKey = { color: '#64748b' };
-const rowVal = { fontWeight: 500, color: '#0f172a' };
-const sep = { height: 1, background: '#f1f5f9', margin: '0 16px' };
-const summaryText = {
-  fontSize: 13, lineHeight: 1.8, color: '#334155', margin: 0,
+const spinRow = {
+  display: 'flex', alignItems: 'center', gap: 8,
+  fontSize: 12, color: T.textSecondary,
 };
-const mutedText = {
-  fontSize: 13, color: '#94a3b8', margin: 0, lineHeight: 1.6,
-};
-const errBox = {
-  padding: '9px 12px', background: '#fef2f2',
-  border: '1px solid #fecaca', borderRadius: 6,
-  color: '#dc2626', fontSize: 12, lineHeight: 1.5,
-};
-const miniSpin = {
-  width: 11, height: 11, flexShrink: 0,
-  border: '2px solid #e2e8f0', borderTopColor: '#6366f1',
+const spin = {
+  width: 12, height: 12, flexShrink: 0,
+  border: `2px solid ${T.border}`, borderTopColor: T.indigo,
   borderRadius: '50%', animation: 'spin 0.7s linear infinite',
+};
+const summaryText = {
+  fontSize: 13, lineHeight: 1.85, color: T.textPrimary, margin: 0,
+};
+const mutedTxt = { fontSize: 12, color: T.textMuted, margin: 0, lineHeight: 1.6 };
+const errBox = {
+  padding: '8px 10px',
+  background: `${T.red}0d`, border: `1px solid ${T.red}28`,
+  borderRadius: 6, color: T.red, fontSize: 12, lineHeight: 1.5,
+};
+const preCode = {
+  margin: 0, padding: '12px 14px',
+  fontSize: 11, fontFamily: 'var(--font-mono)',
+  color: T.textSecondary, lineHeight: 1.7,
+  whiteSpace: 'pre', overflowX: 'auto',
+  background: T.bg0,
+  height: '100%', minHeight: 200,
 };
