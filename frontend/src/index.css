@@ -81,30 +81,30 @@ input, select {
 
 /* ── React Flow dark overrides ──────────────────────────────────────────────── */
 .react-flow__background {
-  background: var(--bg0) !important;
+  background: #080a0f !important;
 }
 .react-flow__minimap {
-  background: var(--bg1) !important;
-  border: 1px solid var(--border) !important;
+  background: #0d0f14 !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
   border-radius: var(--r-md) !important;
 }
 .react-flow__minimap-mask {
-  fill: rgba(13, 17, 23, 0.75) !important;
+  fill: rgba(7, 8, 12, 0.82) !important;
 }
 .react-flow__controls {
-  background: var(--bg1) !important;
-  border: 1px solid var(--border) !important;
+  background: #0d0f14 !important;
+  border: 1px solid rgba(255,255,255,0.07) !important;
   border-radius: var(--r-md) !important;
   box-shadow: none !important;
 }
 .react-flow__controls-button {
-  background: var(--bg1) !important;
-  border-bottom: 1px solid var(--border) !important;
+  background: #0d0f14 !important;
+  border-bottom: 1px solid rgba(255,255,255,0.06) !important;
   color: var(--text2) !important;
   fill: var(--text2) !important;
 }
 .react-flow__controls-button:hover {
-  background: var(--bg2) !important;
+  background: #151820 !important;
 }
 .react-flow__edge-path {
   stroke-linecap: round;
@@ -131,9 +131,9 @@ input, select {
   100% { background-position: -200% 0; }
 }
 @keyframes overviewPopIn {
-  0%   { opacity: 0; transform: translateY(18px) scale(0.97); }
-  60%  { opacity: 1; transform: translateY(-3px) scale(1.005); }
-  100% { opacity: 1; transform: translateY(0)   scale(1); }
+  0%   { opacity: 0; transform: translateY(-18px) scale(0.97); }
+  60%  { opacity: 1; transform: translateY(3px)   scale(1.005); }
+  100% { opacity: 1; transform: translateY(0)     scale(1); }
 }
 @keyframes sidePanelPopIn {
   0%   { opacity: 0; transform: translateX(28px) scale(0.97); }

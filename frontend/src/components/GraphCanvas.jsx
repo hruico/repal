@@ -98,22 +98,24 @@ function getImpactSet(startId, direction, dependentsMap, dependenciesMap) {
   return { visited, depthMap };
 }
 
-// ── Edge builder — centralises stroke + marker colour in one place ────────────
-function buildEdge(e, opacity = 0.15, strokeWidth = 1, highlightColor = null) {
-  const stroke = highlightColor ?? (e.data?.isCycle ? T.red : T.indigo);
+// ── Edge builder — dashed curves, React Flow site style ───────────────────────
+function buildEdge(e, opacity = 0.25, strokeWidth = 1, highlightColor = null) {
+  const isCycle = e.data?.isCycle;
+  const stroke = highlightColor ?? (isCycle ? T.red : 'rgba(140,150,180,0.7)');
   return {
     ...e,
     type: 'default',
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      width: 10,
-      height: 10,
+      width: 9,
+      height: 9,
       color: stroke,
     },
     style: {
       stroke,
       strokeWidth,
       opacity,
+      strokeDasharray: highlightColor ? 'none' : (isCycle ? '4 3' : '5 4'),
     },
   };
 }
@@ -380,22 +382,22 @@ function CanvasInner({
         nodeTypes={nodeTypesMemo}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.12 }}
+        fitViewOptions={{ padding: 0.14 }}
         defaultEdgeOptions={{
           type: 'default',
-          markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color: T.indigo },
-          style: { stroke: T.indigo, strokeWidth: 1, opacity: 0.15 },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 9, height: 9, color: 'rgba(140,150,180,0.5)' },
+          style: { stroke: 'rgba(140,150,180,0.5)', strokeWidth: 1, opacity: 0.25, strokeDasharray: '5 4' },
           animated: false,
         }}
       >
         <MiniMap
           nodeColor={miniMapColor}
-          maskColor="rgba(13,17,23,0.8)"
+          maskColor="rgba(7,8,12,0.82)"
           nodeStrokeWidth={0}
           zoomable pannable
         />
         <Controls />
-        <Background variant="dots" gap={28} size={1} color={T.border} />
+        <Background variant="dots" gap={24} size={1} color="rgba(255,255,255,0.06)" />
       </ReactFlow>
 
       <GraphLegend colorMode={colorMode} />

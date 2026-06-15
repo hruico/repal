@@ -100,10 +100,10 @@ const GLASS_SHADOW  = `0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0
 
 const wrap = {
   position: 'absolute',
-  bottom: 90,           // above the ReactFlow controls
-  left: 170,            // clear of the GraphLegend (which is at left:12)
+  top: 16,
+  left: 16,
   zIndex: 10,
-  width: 420,
+  width: 360,
   maxWidth: 'calc(100vw - 340px)',
   borderRadius: 14,
   background: GLASS_BG,
