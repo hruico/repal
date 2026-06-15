@@ -380,15 +380,11 @@ def export_csv(repo_id: str):
 
 
 # ── Static Frontend (Production) ───────────────────────────────────────────────
+# Mount the built React app. Using StaticFiles(html=True) means it serves
+# index.html for unknown paths automatically — no catch-all GET route needed,
+# so POST routes are never shadowed by a broad GET handler.
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
 
 if os.path.exists(STATIC_DIR):
-    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")))
-
-    @app.get("/{full_path:path}")
-    def serve_frontend(full_path: str):
-        # Never intercept API routes — let FastAPI handle 404s for those properly
-        if full_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="Not found.")
-        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
