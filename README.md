@@ -126,7 +126,7 @@ The Vite dev server proxies all `/api` requests to port 8000 automatically.
 cd frontend && npm run build
 cd ../backend
 source venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000
+SERVE_FRONTEND=1 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 Open **http://localhost:8000** — FastAPI serves the built frontend directly.

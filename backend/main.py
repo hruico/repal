@@ -380,13 +380,13 @@ def export_csv(repo_id: str):
 
 
 # ── Static Frontend (Production) ───────────────────────────────────────────────
-# Mount /assets for JS/CSS chunks, then serve index.html only for GET requests
-# on non-API paths. Using @app.api_route with methods=["GET"] means POST/DELETE
-# routes defined above are never shadowed.
+# Only serve the built frontend when explicitly in production mode.
+# Set SERVE_FRONTEND=1 in your environment to enable this.
+# In development, leave it unset — Vite dev server handles the frontend.
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
 
-if os.path.exists(STATIC_DIR):
+if os.path.exists(STATIC_DIR) and os.getenv("SERVE_FRONTEND") == "1":
     app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
 
     @app.api_route("/{full_path:path}", methods=["GET"])
