@@ -130,3 +130,13 @@ input, select {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
 }
+@keyframes overviewPopIn {
+  0%   { opacity: 0; transform: translateY(18px) scale(0.97); }
+  60%  { opacity: 1; transform: translateY(-3px) scale(1.005); }
+  100% { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@keyframes sidePanelPopIn {
+  0%   { opacity: 0; transform: translateX(28px) scale(0.97); }
+  60%  { opacity: 1; transform: translateX(-4px) scale(1.005); }
+  100% { opacity: 1; transform: translateX(0)    scale(1); }
+}

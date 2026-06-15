@@ -1,17 +1,8 @@
 import { T } from '../theme';
 
 /**
- * OverviewPanel
- * A collapsible banner that sits between the toolbar and the graph canvas.
- * Shows a skeleton while the AI overview is loading, then the text once ready.
- *
- * Props:
- *  - overview:   string | null   — the AI-generated text (null = not yet fetched)
- *  - loading:    bool            — show skeleton
- *  - error:      string          — error message to display instead of text
- *  - collapsed:  bool            — controlled collapse state
- *  - onToggle:   () => void      — toggle callback
- *  - onRegenerate: () => void    — force-refresh callback
+ * OverviewPanel — floating glassmorphism bar, bottom-left of the canvas.
+ * Animates in with overviewPopIn on mount.
  */
 export default function OverviewPanel({
   overview,
@@ -23,10 +14,12 @@ export default function OverviewPanel({
 }) {
   return (
     <div style={wrap}>
+      {/* Subtle top accent line */}
+      <div style={accentLine} />
+
       {/* Header row — always visible */}
       <div style={header} onClick={onToggle}>
         <div style={headerLeft}>
-          {/* AI star icon */}
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
             stroke={T.indigo} strokeWidth="2">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -36,7 +29,6 @@ export default function OverviewPanel({
           {loading && <div style={smallSpin} />}
         </div>
         <div style={headerRight}>
-          {/* Regenerate — only when we have content and not loading */}
           {!loading && (overview || error) && (
             <button
               style={regenBtn}
@@ -50,12 +42,11 @@ export default function OverviewPanel({
               Regenerate
             </button>
           )}
-          {/* Chevron */}
           <svg
             width="12" height="12" viewBox="0 0 24 24" fill="none"
             stroke={T.textMuted} strokeWidth="2.5"
             style={{
-              transition: 'transform 0.2s',
+              transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
               transform: collapsed ? 'rotate(0deg)' : 'rotate(180deg)',
             }}
           >
@@ -64,14 +55,20 @@ export default function OverviewPanel({
         </div>
       </div>
 
-      {/* Body — hidden when collapsed */}
+      {/* Body */}
       {!collapsed && (
         <div style={body}>
           {loading && !overview && (
-            /* Skeleton shimmer */
             <div style={skeletonWrap}>
               {[100, 92, 85, 60].map((w, i) => (
-                <div key={i} style={{ ...skelLine, width: `${w}%`, animationDelay: `${i * 0.12}s` }} />
+                <div key={i} style={{
+                  height: 10, borderRadius: 4,
+                  width: `${w}%`,
+                  background: `linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.09) 50%, rgba(255,255,255,0.04) 75%)`,
+                  backgroundSize: '200% 100%',
+                  animation: `shimmer 1.4s ${i * 0.12}s infinite`,
+                  marginBottom: i < 3 ? 8 : 0,
+                }} />
               ))}
             </div>
           )}
@@ -95,25 +92,41 @@ export default function OverviewPanel({
   );
 }
 
-/* ── Styles ─────────────────────────────────────────────────────────────────── */
+/* ── Glass styles ────────────────────────────────────────────────────────────── */
+
+const GLASS_BG      = 'rgba(13, 17, 23, 0.72)';
+const GLASS_BORDER  = 'rgba(129, 140, 248, 0.14)';
+const GLASS_SHADOW  = `0 8px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.06)`;
 
 const wrap = {
-  borderBottom: `1px solid ${T.border}`,
-  background: T.bg1,
-  flexShrink: 0,
+  position: 'absolute',
+  bottom: 90,           // above the ReactFlow controls
+  left: 170,            // clear of the GraphLegend (which is at left:12)
+  zIndex: 10,
+  width: 420,
+  maxWidth: 'calc(100vw - 340px)',
+  borderRadius: 14,
+  background: GLASS_BG,
+  backdropFilter: 'blur(22px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+  border: `1px solid ${GLASS_BORDER}`,
+  boxShadow: GLASS_SHADOW,
+  overflow: 'hidden',
+  animation: 'overviewPopIn 0.45s cubic-bezier(0.34,1.56,0.64,1) both',
+  animationDelay: '0.1s',
+};
+const accentLine = {
+  height: 2,
+  background: `linear-gradient(90deg, ${T.indigo}80 0%, ${T.teal}50 60%, transparent 100%)`,
 };
 const header = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  padding: '7px 14px',
+  padding: '9px 14px',
   cursor: 'pointer',
   userSelect: 'none',
 };
-const headerLeft = {
-  display: 'flex', alignItems: 'center', gap: 8,
-};
-const headerRight = {
-  display: 'flex', alignItems: 'center', gap: 8,
-};
+const headerLeft  = { display: 'flex', alignItems: 'center', gap: 8 };
+const headerRight = { display: 'flex', alignItems: 'center', gap: 8 };
 const titleText = {
   fontSize: 11, fontWeight: 700,
   color: T.textSecondary, fontFamily: 'var(--font-mono)',
@@ -121,44 +134,40 @@ const titleText = {
 };
 const badge = {
   fontSize: 9, color: T.textMuted,
-  background: T.bg2, border: `1px solid ${T.border}`,
-  padding: '1px 6px', borderRadius: 10,
+  background: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  padding: '1px 7px', borderRadius: 10,
   fontFamily: 'var(--font-mono)',
 };
 const smallSpin = {
   width: 10, height: 10,
-  border: `2px solid ${T.border}`, borderTopColor: T.indigo,
+  border: `2px solid rgba(255,255,255,0.1)`, borderTopColor: T.indigo,
   borderRadius: '50%', animation: 'spin 0.7s linear infinite',
   flexShrink: 0,
 };
 const regenBtn = {
   display: 'flex', alignItems: 'center', gap: 4,
-  background: 'none', border: `1px solid ${T.border}`,
+  background: 'rgba(255,255,255,0.05)',
+  border: '1px solid rgba(255,255,255,0.1)',
   borderRadius: 5, padding: '3px 8px',
   cursor: 'pointer', color: T.textMuted,
   fontSize: 10, fontFamily: 'var(--font-sans)',
+  transition: 'background 0.15s',
 };
 const body = {
-  padding: '0 14px 10px',
+  padding: '2px 14px 12px',
+  borderTop: '1px solid rgba(255,255,255,0.05)',
 };
-const skeletonWrap = {
-  display: 'flex', flexDirection: 'column', gap: 7, paddingTop: 4,
-};
-const skelLine = {
-  height: 10, borderRadius: 4,
-  background: `linear-gradient(90deg, ${T.bg2} 25%, ${T.border} 50%, ${T.bg2} 75%)`,
-  backgroundSize: '200% 100%',
-  animation: 'shimmer 1.4s infinite',
-};
+const skeletonWrap = { paddingTop: 8 };
 const overviewText = {
-  fontSize: 12, lineHeight: 1.8,
-  color: T.textSecondary, margin: 0,
+  fontSize: 12, lineHeight: 1.85,
+  color: 'rgba(230,237,243,0.75)', margin: 0,
   fontFamily: 'var(--font-sans)',
-  maxWidth: 900,
+  paddingTop: 8,
 };
 const errBox = {
   display: 'flex', alignItems: 'flex-start', gap: 7,
   fontSize: 11, color: T.red, lineHeight: 1.5,
   background: `${T.red}0d`, border: `1px solid ${T.red}25`,
-  borderRadius: 5, padding: '7px 10px',
+  borderRadius: 6, padding: '8px 10px', marginTop: 8,
 };

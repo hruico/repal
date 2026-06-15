@@ -333,8 +333,11 @@ function Num({ value, color }) {
 function StatCell({ label, value, color }) {
   return (
     <div style={{
-      padding: '8px 10px', background: T.bg2,
-      borderRadius: 5, display: 'flex', flexDirection: 'column', gap: 3,
+      padding: '8px 10px',
+      background: 'rgba(255,255,255,0.05)',
+      border: '1px solid rgba(255,255,255,0.07)',
+      borderRadius: 8,
+      display: 'flex', flexDirection: 'column', gap: 3,
     }}>
       <span style={{ fontSize: 9, color: T.textMuted, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
         {label}
@@ -348,12 +351,27 @@ function StatCell({ label, value, color }) {
 
 /* ── Styles ─────────────────────────────────────────────────────────────────── */
 
+const GLASS_BG     = 'rgba(13, 17, 23, 0.72)';
+const GLASS_BORDER = 'rgba(129, 140, 248, 0.14)';
+const GLASS_SHADOW = `0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.06)`;
+
 const panel = {
-  width: 280, flexShrink: 0,
-  borderLeft: `1px solid ${T.border}`,
-  background: T.bg1,
+  position: 'absolute',
+  top: 16,
+  right: 16,
+  bottom: 16,
+  width: 292,
+  zIndex: 10,
+  borderRadius: 16,
+  background: GLASS_BG,
+  backdropFilter: 'blur(22px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+  border: `1px solid ${GLASS_BORDER}`,
+  boxShadow: GLASS_SHADOW,
   display: 'flex', flexDirection: 'column',
   overflow: 'hidden',
+  animation: 'sidePanelPopIn 0.45s cubic-bezier(0.34,1.56,0.64,1) both',
+  animationDelay: '0.18s',
 };
 const emptyWrap = {
   flex: 1, display: 'flex', flexDirection: 'column',
@@ -361,7 +379,7 @@ const emptyWrap = {
 };
 const emptyHeader = {
   padding: '12px 14px 10px',
-  borderBottom: `1px solid ${T.border}`,
+  borderBottom: '1px solid rgba(255,255,255,0.06)',
   flexShrink: 0,
 };
 const emptyTitle = {
@@ -371,9 +389,9 @@ const emptyTitle = {
 };
 const statsGrid = {
   display: 'grid', gridTemplateColumns: '1fr 1fr',
-  gap: 1, padding: '12px 14px', flexShrink: 0,
+  gap: 6, padding: '12px 14px', flexShrink: 0,
 };
-const emptyDivider = { height: 1, background: T.border, flexShrink: 0 };
+const emptyDivider = { height: 1, background: 'rgba(255,255,255,0.05)', flexShrink: 0 };
 const aiLabelSmall = {
   display: 'flex', alignItems: 'center', gap: 6,
   fontSize: 9, fontWeight: 700, color: T.textMuted,
@@ -384,7 +402,7 @@ const aiLabelSmall = {
 const skeletonWrap = { marginTop: 4 };
 const header = {
   padding: '12px 14px 10px',
-  borderBottom: `1px solid ${T.border}`,
+  borderBottom: '1px solid rgba(255,255,255,0.06)',
   display: 'flex', gap: 8, alignItems: 'flex-start',
 };
 const fname = {
@@ -397,11 +415,15 @@ const fpath = {
   marginTop: 3, lineHeight: 1.5,
 };
 const closeBtn = {
-  background: 'none', border: 'none', cursor: 'pointer',
-  fontSize: 12, color: T.textMuted, padding: '2px 4px', flexShrink: 0,
+  background: 'rgba(255,255,255,0.06)',
+  border: '1px solid rgba(255,255,255,0.1)',
+  borderRadius: 6,
+  cursor: 'pointer',
+  fontSize: 11, color: T.textMuted, padding: '3px 6px', flexShrink: 0,
+  transition: 'background 0.15s',
 };
 const tabBar = {
-  display: 'flex', borderBottom: `1px solid ${T.border}`,
+  display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)',
   flexShrink: 0,
 };
 const tabBtn = (active) => ({
@@ -417,7 +439,7 @@ const tabBtn = (active) => ({
 const tabContent = { padding: '14px', overflowY: 'auto', flex: 1 };
 const mrow = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  padding: '8px 0', borderBottom: `1px solid ${T.border}`,
+  padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
 };
 const sectionLabel = {
   fontSize: 9, fontWeight: 700, color: T.textMuted,
@@ -441,7 +463,7 @@ const spinRow = {
 };
 const spin = {
   width: 12, height: 12, flexShrink: 0,
-  border: `2px solid ${T.border}`, borderTopColor: T.indigo,
+  border: `2px solid rgba(255,255,255,0.08)`, borderTopColor: T.indigo,
   borderRadius: '50%', animation: 'spin 0.7s linear infinite',
 };
 const summaryText = {
@@ -458,7 +480,7 @@ const preCode = {
   fontSize: 11, fontFamily: 'var(--font-mono)',
   color: T.textSecondary, lineHeight: 1.7,
   whiteSpace: 'pre', overflowX: 'auto',
-  background: T.bg0,
+  background: 'rgba(0,0,0,0.25)',
   height: '100%', minHeight: 200,
 };
 const impactBox = {

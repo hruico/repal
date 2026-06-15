@@ -235,20 +235,10 @@ export default function GraphView() {
         </div>
       </header>
 
-      {/* ── Overview panel ── */}
-      <OverviewPanel
-        overview={overview}
-        loading={overviewLoading}
-        error={overviewError}
-        collapsed={overviewCollapsed}
-        onToggle={() => setOverviewCollapsed(c => !c)}
-        onRegenerate={() => { setOverview(''); fetchOverview(true); }}
-      />
-
-      {/* ── Body ── */}
+      {/* ── Body — canvas fills full area, panels float on top ── */}
       <div style={body}>
 
-        {/* Folder tree panel */}
+        {/* Folder tree panel — still a sidebar, not floating */}
         {showTree && (
           <div style={treePanel}>
             <div style={treePanelHead}>EXPLORER</div>
@@ -262,8 +252,8 @@ export default function GraphView() {
           </div>
         )}
 
-        {/* Canvas */}
-        <div style={{ flex: 1, position: 'relative' }}>
+        {/* Canvas — fills remaining space, floating panels sit on top */}
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           {loading && (
             <Center>
               <div style={bigSpin} />
@@ -294,18 +284,32 @@ export default function GraphView() {
               impactDirection={impactDirection}
             />
           )}
-        </div>
 
-        {/* Side panel */}
-        <SidePanel
-          selectedNode={selectedNode}
-          repoId={repoId}
-          impactInfo={impactInfo}
-          graphStats={stats}
-          overview={overview}
-          overviewLoading={overviewLoading}
-          onClose={() => { setSelectedNode(null); setImpactInfo(null); }}
-        />
+          {/* ── Floating Overview Panel ── */}
+          {!loading && !error && graphData && (
+            <OverviewPanel
+              overview={overview}
+              loading={overviewLoading}
+              error={overviewError}
+              collapsed={overviewCollapsed}
+              onToggle={() => setOverviewCollapsed(c => !c)}
+              onRegenerate={() => { setOverview(''); fetchOverview(true); }}
+            />
+          )}
+
+          {/* ── Floating Side Panel ── */}
+          {!loading && !error && graphData && (
+            <SidePanel
+              selectedNode={selectedNode}
+              repoId={repoId}
+              impactInfo={impactInfo}
+              graphStats={stats}
+              overview={overview}
+              overviewLoading={overviewLoading}
+              onClose={() => { setSelectedNode(null); setImpactInfo(null); }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Hint bar */}
