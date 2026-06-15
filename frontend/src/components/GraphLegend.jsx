@@ -7,126 +7,134 @@ const EXT_SHOWN = ['.py', '.js', '.ts', '.jsx', '.tsx', '.cpp', '.java', '.go'];
 export default function GraphLegend({ colorMode = 'ext' }) {
   return (
     <div style={wrap}>
-      {colorMode === 'ext' && (
-        <>
-          <p style={title}>Language</p>
-          <div style={grid}>
-            {EXT_SHOWN.map(ext => (
-              <div key={ext} style={row}>
-                <span style={{ ...dot, background: T.ext[ext] }} />
-                <span style={lbl}>{ext}</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
 
-      {colorMode === 'loc' && (
-        <>
-          <p style={title}>Lines of Code</p>
-          {[['> 400', T.red], ['> 200', T.amber], ['> 80', T.green], ['≤ 80', T.indigo]].map(([l, c]) => (
-            <div key={l} style={row}>
-              <span style={{ ...dot, background: c }} />
-              <span style={lbl}>{l}</span>
-            </div>
+      {/* ── Left section: colour mode key ── */}
+      <div style={section}>
+        <span style={title}>
+          {colorMode === 'ext'  && 'Language'}
+          {colorMode === 'loc'  && 'LoC'}
+          {colorMode === 'cc'   && 'Complexity'}
+          {colorMode === 'risk' && 'Risk'}
+        </span>
+        <div style={pills}>
+          {colorMode === 'ext' && EXT_SHOWN.map(ext => (
+            <Pill key={ext} color={T.ext[ext]} label={ext} />
           ))}
-        </>
-      )}
 
-      {colorMode === 'cc' && (
-        <>
-          <p style={title}>Complexity</p>
-          {[['> 10', T.red], ['> 5', T.amber], ['≤ 5', T.green], ['n/a', T.textMuted]].map(([l, c]) => (
-            <div key={l} style={row}>
-              <span style={{ ...dot, background: c }} />
-              <span style={lbl}>CC {l}</span>
-            </div>
-          ))}
-        </>
-      )}
+          {colorMode === 'loc' && [
+            ['> 400', T.red], ['> 200', T.amber], ['> 80', T.green], ['≤ 80', T.indigo],
+          ].map(([l, c]) => <Pill key={l} color={c} label={l} />)}
 
-      {colorMode === 'risk' && (
-        <>
-          <p style={title}>Risk Score</p>
-          {/* Continuous gradient bar */}
-          <div style={gradBar} />
-          <div style={gradLabels}>
-            <span style={lbl}>Low</span>
-            <span style={lbl}>High</span>
-          </div>
-          <div style={{ marginTop: 6 }}>
-            {[
-              ['High  ≥ 0.7', 'rgb(255,30,30)'],
-              ['Med   ≥ 0.4', 'rgb(255,160,30)'],
-              ['Low   < 0.4', 'rgb(30,200,30)'],
-            ].map(([l, c]) => (
-              <div key={l} style={row}>
-                <span style={{ ...dot, background: c }} />
-                <span style={lbl}>{l}</span>
-              </div>
-            ))}
-          </div>
-          <p style={note}>Complexity × Churn</p>
-        </>
-      )}
+          {colorMode === 'cc' && [
+            ['> 10', T.red], ['> 5', T.amber], ['≤ 5', T.green], ['n/a', T.textMuted],
+          ].map(([l, c]) => <Pill key={l} color={c} label={`CC ${l}`} />)}
 
-      <div style={sep} />
-      <div style={row}>
-        <span style={{ ...arrowLine, background: T.indigo }} />
-        <span style={lbl}>dependency</span>
+          {colorMode === 'risk' && (
+            <>
+              {/* compact gradient bar + tiers inline */}
+              <div style={riskBar} />
+              {[
+                ['High', 'rgb(255,30,30)'],
+                ['Med', 'rgb(255,160,30)'],
+                ['Low', 'rgb(30,200,30)'],
+              ].map(([l, c]) => <Pill key={l} color={c} label={l} />)}
+            </>
+          )}
+        </div>
       </div>
-      <div style={row}>
-        <span style={{ ...arrowLine, background: T.red }} />
-        <span style={lbl}>cycle</span>
+
+      {/* ── Divider ── */}
+      <div style={vline} />
+
+      {/* ── Right section: edge types ── */}
+      <div style={section}>
+        <span style={title}>Edges</span>
+        <div style={pills}>
+          <EdgePill color={T.indigo}  label="dep" />
+          <EdgePill color={T.red}     label="cycle" />
+          <EdgePill color={T.teal}    label="impact" />
+          <EdgePill color={T.amber}   label="selected" />
+        </div>
       </div>
-      <div style={row}>
-        <span style={{ ...arrowLine, background: T.teal }} />
-        <span style={lbl}>impact path</span>
-      </div>
-      <div style={row}>
-        <span style={{ ...arrowLine, background: T.amber }} />
-        <span style={lbl}>selected</span>
-      </div>
+
     </div>
   );
 }
 
+/* ── Sub-components ── */
+
+function Pill({ color, label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      <span style={{ fontSize: 10, color: T.textSecondary, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function EdgePill({ color, label }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span style={{ width: 18, height: 2, background: color, borderRadius: 1, flexShrink: 0, display: 'inline-block' }} />
+      <span style={{ fontSize: 10, color: T.textSecondary, fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap' }}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+/* ── Styles ── */
+
 const wrap = {
-  position: 'absolute', bottom: 80, left: 12, zIndex: 5,
-  background: 'rgba(22,27,34,0.96)', backdropFilter: 'blur(8px)',
-  border: `1px solid ${T.border}`, borderRadius: 8,
-  padding: '10px 12px', minWidth: 136,
-  boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+  position: 'absolute',
+  bottom: 12,
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 5,
+  display: 'flex',
+  alignItems: 'center',
+  gap: 16,
+  background: 'rgba(10,11,16,0.88)',
+  backdropFilter: 'blur(14px) saturate(160%)',
+  WebkitBackdropFilter: 'blur(14px) saturate(160%)',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: 40,             // pill shape
+  padding: '7px 18px',
+  boxShadow: '0 4px 24px rgba(0,0,0,0.55)',
+  pointerEvents: 'none',
 };
+
+const section = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+};
+
 const title = {
   fontSize: 9, fontWeight: 700, color: T.textMuted,
   textTransform: 'uppercase', letterSpacing: '0.6px',
-  marginBottom: 8, fontFamily: 'var(--font-mono)',
+  fontFamily: 'var(--font-mono)',
+  whiteSpace: 'nowrap',
+  flexShrink: 0,
 };
-const grid = {
-  display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 10px', marginBottom: 2,
+
+const pills = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 12,
+  flexWrap: 'nowrap',
 };
-const row = { display: 'flex', alignItems: 'center', gap: 7, marginBottom: 4 };
-const dot = { width: 7, height: 7, borderRadius: '50%', flexShrink: 0 };
-const lbl = { fontSize: 10, color: T.textSecondary, fontFamily: 'var(--font-mono)' };
-const sep = { borderTop: `1px solid ${T.border}`, margin: '6px 0' };
-const line = { width: 16, height: 2, display: 'inline-block', borderRadius: 1, flexShrink: 0 };
-// Arrow line: line + triangle tip
-const arrowLine = {
-  width: 20, height: 2, display: 'inline-flex', alignItems: 'center',
-  borderRadius: 1, flexShrink: 0, position: 'relative',
-  // We rely on ::after not being possible in inline styles, so we use a
-  // slightly longer line and accept the arrowhead is implicit in the legend label.
+
+const vline = {
+  width: 1, height: 20,
+  background: 'rgba(255,255,255,0.1)',
+  flexShrink: 0,
 };
-const gradBar = {
-  width: '100%', height: 8, borderRadius: 4,
+
+const riskBar = {
+  width: 40, height: 6, borderRadius: 3,
   background: 'linear-gradient(to right, rgb(30,200,30), rgb(255,160,30), rgb(255,30,30))',
-  marginBottom: 4,
-};
-const gradLabels = {
-  display: 'flex', justifyContent: 'space-between', marginBottom: 6,
-};
-const note = {
-  fontSize: 9, color: T.textMuted, fontFamily: 'var(--font-mono)',
-  marginTop: 4, marginBottom: 0, fontStyle: 'italic',
+  flexShrink: 0,
 };

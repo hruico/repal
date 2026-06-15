@@ -103,7 +103,7 @@ const wrap = {
   top: 16,
   left: 16,
   zIndex: 10,
-  width: 360,
+  width: 480,
   maxWidth: 'calc(100vw - 340px)',
   borderRadius: 14,
   background: GLASS_BG,
