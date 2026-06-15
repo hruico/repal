@@ -2,7 +2,9 @@ import { useCallback, useMemo, useEffect, useState } from 'react';
 import ReactFlow, {
   MiniMap, Controls, Background,
   useNodesState, useEdgesState,
-  BezierEdge,
+  BezierEdge, MarkerType,
+  useReactFlow, ReactFlowProvider,
+  Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { T } from '../theme';
@@ -96,21 +98,127 @@ function getImpactSet(startId, direction, dependentsMap, dependenciesMap) {
   return { visited, depthMap };
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
-export default function GraphCanvas({
-  rawNodes,
-  rawEdges,
-  colorMode = 'ext',
-  onNodeClick,
-  impactMode = false,
-  impactDirection = 'dependents',
+// ── Edge builder — centralises stroke + marker colour in one place ────────────
+function buildEdge(e, opacity = 0.15, strokeWidth = 1, highlightColor = null) {
+  const stroke = highlightColor ?? (e.data?.isCycle ? T.red : T.indigo);
+  return {
+    ...e,
+    type: 'default',
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 10,
+      height: 10,
+      color: stroke,
+    },
+    style: {
+      stroke,
+      strokeWidth,
+      opacity,
+    },
+  };
+}
+
+// ── Folder region overlay (Option A from the plan) ────────────────────────────
+// Rendered as an absolutely-positioned SVG inside the RF viewport.
+// We re-use the same group-keying logic as applyRadialLayout.
+function GroupRegions({ nodes, colorMode }) {
+  const { getViewport } = useReactFlow();
+  const [vp, setVp] = useState({ x: 0, y: 0, zoom: 1 });
+
+  // Recompute on every animation frame so it tracks pan/zoom smoothly
+  useEffect(() => {
+    let raf;
+    const tick = () => {
+      setVp(getViewport());
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [getViewport]);
+
+  // Group visible (non-hidden) nodes by top-level directory
+  const groups = useMemo(() => {
+    const map = {};
+    nodes.forEach(n => {
+      if (n.hidden) return;
+      const group = n.id.split('/').length > 1 ? n.id.split('/')[0] : '__root__';
+      if (!map[group]) map[group] = [];
+      map[group].push(n);
+    });
+    return map;
+  }, [nodes]);
+
+  // Palette for region fills — cycle through a few muted accent colours
+  const palette = [T.indigo, T.teal, T.amber, T.green, '#a78bfa', '#fb923c'];
+
+  const PAD = 36; // padding around the bounding box
+
+  return (
+    <svg
+      style={{
+        position: 'absolute', inset: 0,
+        width: '100%', height: '100%',
+        pointerEvents: 'none', zIndex: 0,
+        overflow: 'visible',
+      }}
+    >
+      {Object.entries(groups).map(([group, groupNodes], gi) => {
+        if (groupNodes.length < 2) return null; // skip singletons
+
+        // Bounding box in graph coords
+        const xs = groupNodes.map(n => n.position.x);
+        const ys = groupNodes.map(n => n.position.y);
+        const minX = Math.min(...xs) - PAD;
+        const minY = Math.min(...ys) - PAD;
+        const maxX = Math.max(...xs) + PAD + 96; // +96 to account for max node width
+        const maxY = Math.max(...ys) + PAD + 96;
+
+        // Transform to screen coords
+        const sx = minX * vp.zoom + vp.x;
+        const sy = minY * vp.zoom + vp.y;
+        const sw = (maxX - minX) * vp.zoom;
+        const sh = (maxY - minY) * vp.zoom;
+
+        const accent = palette[gi % palette.length];
+        const labelName = group === '__root__' ? '/' : group + '/';
+
+        return (
+          <g key={group}>
+            <rect
+              x={sx} y={sy} width={sw} height={sh}
+              rx={16} ry={16}
+              fill={`${accent}06`}
+              stroke={`${accent}20`}
+              strokeWidth={1}
+              strokeDasharray="4 4"
+            />
+            <text
+              x={sx + 12}
+              y={sy + 18}
+              fontSize={10 * Math.min(vp.zoom, 1)}
+              fill={`${accent}60`}
+              fontFamily="var(--font-mono)"
+              fontWeight={700}
+              letterSpacing="0.04em"
+            >
+              {labelName}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+// ── Inner canvas (needs to be inside ReactFlowProvider for useReactFlow) ──────
+function CanvasInner({
+  rawNodes, rawEdges, colorMode, onNodeClick,
+  impactMode, impactDirection,
 }) {
-  // ── Node type — rebuilt only when colorMode changes ──────────────────────
   const nodeTypesMemo = useMemo(() => ({
     fileNode: (props) => <FileNode {...props} colorMode={colorMode} />,
   }), [colorMode]);
 
-  // ── Filter edges to only those between visible nodes ──────────────────────
   const validNodeIds = useMemo(() => new Set(rawNodes.map(n => n.id)), [rawNodes]);
 
   const filteredEdges = useMemo(
@@ -118,52 +226,36 @@ export default function GraphCanvas({
     [rawEdges, validNodeIds]
   );
 
-  // ── Stable layout key: only changes when the SET of node IDs changes ──────
-  // Search/focus filtering changes which nodes are in rawNodes, but we want
-  // to preserve positions for nodes that are still present. We re-layout only
-  // when the sorted ID list changes (structural change: new repo or re-analyze).
   const layoutKey = useMemo(
     () => [...rawNodes.map(n => n.id)].sort().join('|'),
     [rawNodes]
   );
 
-  // ── Initial layout ────────────────────────────────────────────────────────
   const initialLaid = useMemo(
     () => applyRadialLayout(rawNodes, filteredEdges),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layoutKey] // intentionally keyed on layoutKey, not rawNodes/filteredEdges
+    [layoutKey]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialLaid);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // ── Re-layout on structural change (new repo loaded, re-analyzed) ─────────
+  // Structural re-layout
   useEffect(() => {
     setNodes(applyRadialLayout(rawNodes, filteredEdges));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layoutKey]); // NOT rawNodes — avoids fighting user drags on every render
+  }, [layoutKey]);
 
-  // ── Sync visible nodes for search/focus (toggle `hidden`, keep positions) ─
+  // Search/focus visibility
   useEffect(() => {
     setNodes(prev =>
-      prev.map(n => ({
-        ...n,
-        hidden: !validNodeIds.has(n.id),
-      }))
+      prev.map(n => ({ ...n, hidden: !validNodeIds.has(n.id) }))
     );
   }, [validNodeIds, setNodes]);
 
-  // ── Sync edges ────────────────────────────────────────────────────────────
+  // Base edges — dim by default, with arrowheads
   const baseEdges = useMemo(
-    () => filteredEdges.map(e => ({
-      ...e,
-      type: 'default',
-      style: {
-        stroke: e.data?.isCycle ? T.red : `${T.indigo}70`,
-        strokeWidth: 1,
-        opacity: 1,
-      },
-    })),
+    () => filteredEdges.map(e => buildEdge(e, 0.15, 1)),
     [filteredEdges]
   );
 
@@ -171,13 +263,10 @@ export default function GraphCanvas({
     setEdges(baseEdges);
   }, [baseEdges, setEdges]);
 
-  // ── Adjacency maps for Impact Mode ───────────────────────────────────────
-  // dependentsMap:   nodeId → Set of nodes that import it (who breaks if I change this?)
-  // dependenciesMap: nodeId → Set of nodes it imports (what does this depend on?)
+  // Adjacency maps
   const dependentsMap = useMemo(() => {
     const map = new Map();
     filteredEdges.forEach(e => {
-      // edge: source imports target → target's dependents include source
       if (!map.has(e.target)) map.set(e.target, new Set());
       map.get(e.target).add(e.source);
     });
@@ -193,112 +282,79 @@ export default function GraphCanvas({
     return map;
   }, [filteredEdges]);
 
-  // ── Default edge/node reset helpers ──────────────────────────────────────
+  // Track whether there's an active click-selection so hover doesn't override it
+  const [clickSelected, setClickSelected] = useState(null);
+
   const resetEdges = useCallback(() => {
-    setEdges(eds => eds.map(e => ({
-      ...e,
-      style: {
-        stroke: e.data?.isCycle ? T.red : `${T.indigo}70`,
-        strokeWidth: 1,
-        opacity: 1,
-      },
-    })));
+    setEdges(eds => eds.map(e => buildEdge(e, 0.15, 1)));
   }, [setEdges]);
 
   const resetNodes = useCallback(() => {
     setNodes(prev => prev.map(n => ({ ...n, style: undefined })));
   }, [setNodes]);
 
+  // ── Node hover (only when no click-selection active) ──────────────────────
+  const handleNodeMouseEnter = useCallback((_, node) => {
+    if (clickSelected) return; // don't override active selection
+    setEdges(eds => eds.map(e => {
+      const hit = e.source === node.id || e.target === node.id;
+      if (!hit) return e;
+      return buildEdge(e, 1, 2, e.data?.isCycle ? T.red : T.indigo);
+    }));
+  }, [clickSelected, setEdges]);
+
+  const handleNodeMouseLeave = useCallback(() => {
+    if (clickSelected) return;
+    resetEdges();
+  }, [clickSelected, resetEdges]);
+
   // ── Click handler ─────────────────────────────────────────────────────────
   const handleNodeClick = useCallback((_, node) => {
+    setClickSelected(node.id);
+
     if (impactMode) {
-      // ── Impact Mode: BFS transitive traversal ──────────────────────────
       const { visited, depthMap } = getImpactSet(
         node.id, impactDirection, dependentsMap, dependenciesMap
       );
 
-      // Count direct vs transitive
-      const directMap = impactDirection === 'dependents'
-        ? dependentsMap : dependenciesMap;
+      const directMap = impactDirection === 'dependents' ? dependentsMap : dependenciesMap;
       const directNeighbors = directMap.get(node.id) || new Set();
-      const directCount  = directNeighbors.size;
-      const transitiveCount = visited.size - 1 - directCount; // exclude self + direct
+      const directCount = directNeighbors.size;
+      const transitiveCount = Math.max(0, visited.size - 1 - directCount);
 
-      // Style nodes by depth
       setNodes(prev => prev.map(n => {
-        if (n.id === node.id) {
-          return {
-            ...n,
-            style: {
-              filter: `drop-shadow(0 0 8px ${T.amber})`,
-              opacity: 1,
-            },
-          };
-        }
+        if (n.id === node.id) return { ...n, style: { filter: `drop-shadow(0 0 8px ${T.amber})`, opacity: 1 } };
         if (visited.has(n.id)) {
           const depth = depthMap.get(n.id) || 1;
           const maxDepth = Math.max(...depthMap.values());
           const fade = maxDepth > 1 ? 1 - (depth - 1) / maxDepth * 0.45 : 1;
-          return {
-            ...n,
-            style: {
-              filter: `drop-shadow(0 0 5px ${T.teal}90)`,
-              opacity: fade,
-            },
-          };
+          return { ...n, style: { filter: `drop-shadow(0 0 5px ${T.teal}90)`, opacity: fade } };
         }
-        return { ...n, style: { opacity: 0.1, filter: 'grayscale(0.8)' } };
+        return { ...n, style: { opacity: 0.08, filter: 'grayscale(0.9)' } };
       }));
 
-      // Style edges
       setEdges(eds => eds.map(e => {
-        const inPath =
-          (visited.has(e.source) && visited.has(e.target)) &&
-          (e.source === node.id || e.target === node.id ||
-           visited.has(e.source));
-        const isConnected =
-          (impactDirection === 'dependents' && visited.has(e.source) && visited.has(e.target)) ||
-          (impactDirection === 'dependencies' && visited.has(e.source) && visited.has(e.target));
-        return {
-          ...e,
-          style: {
-            stroke: isConnected ? T.teal : `${T.border}40`,
-            strokeWidth: isConnected ? 1.5 : 0.5,
-            opacity: isConnected ? 0.9 : 0.1,
-          },
-        };
+        const isConnected = visited.has(e.source) && visited.has(e.target);
+        return isConnected
+          ? buildEdge(e, 0.9, 1.5, T.teal)
+          : buildEdge(e, 0.06, 0.5);
       }));
 
-      onNodeClick(node, {
-        impactMode: true,
-        impactDirection,
-        totalAffected: visited.size - 1,
-        directCount,
-        transitiveCount: Math.max(0, transitiveCount),
-      });
+      onNodeClick(node, { impactMode: true, impactDirection, totalAffected: visited.size - 1, directCount, transitiveCount });
     } else {
-      // ── Normal Mode: highlight direct edges ───────────────────────────
       resetNodes();
       setEdges(eds => eds.map(e => {
         const hit = e.source === node.id || e.target === node.id;
-        return {
-          ...e,
-          style: {
-            stroke: hit ? T.amber : (e.data?.isCycle ? `${T.red}30` : `${T.indigo}20`),
-            strokeWidth: hit ? 2 : 1,
-            opacity: hit ? 1 : 0.18,
-          },
-        };
+        return hit
+          ? buildEdge(e, 1, 2, T.amber)
+          : buildEdge(e, 0.1, 0.8);
       }));
       onNodeClick(node, null);
     }
-  }, [
-    impactMode, impactDirection,
-    dependentsMap, dependenciesMap,
-    onNodeClick, setEdges, setNodes, resetNodes,
-  ]);
+  }, [impactMode, impactDirection, dependentsMap, dependenciesMap, onNodeClick, setEdges, setNodes, resetNodes]);
 
   const handlePaneClick = useCallback(() => {
+    setClickSelected(null);
     resetEdges();
     resetNodes();
   }, [resetEdges, resetNodes]);
@@ -308,13 +364,18 @@ export default function GraphCanvas({
   [colorMode]);
 
   return (
-    <div style={{ width: '100%', height: '100%' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+      {/* Folder region overlay — sits behind the RF canvas */}
+      <GroupRegions nodes={nodes} colorMode={colorMode} />
+
       <ReactFlow
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeClick={handleNodeClick}
+        onNodeMouseEnter={handleNodeMouseEnter}
+        onNodeMouseLeave={handleNodeMouseLeave}
         onPaneClick={handlePaneClick}
         nodeTypes={nodeTypesMemo}
         edgeTypes={edgeTypes}
@@ -322,7 +383,8 @@ export default function GraphCanvas({
         fitViewOptions={{ padding: 0.12 }}
         defaultEdgeOptions={{
           type: 'default',
-          style: { stroke: `${T.indigo}70`, strokeWidth: 1 },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 10, height: 10, color: T.indigo },
+          style: { stroke: T.indigo, strokeWidth: 1, opacity: 0.15 },
           animated: false,
         }}
       >
@@ -335,6 +397,7 @@ export default function GraphCanvas({
         <Controls />
         <Background variant="dots" gap={28} size={1} color={T.border} />
       </ReactFlow>
+
       <GraphLegend colorMode={colorMode} />
 
       {/* Impact Mode indicator badge */}
@@ -357,5 +420,14 @@ export default function GraphCanvas({
         </div>
       )}
     </div>
+  );
+}
+
+// ── Public export — wraps with ReactFlowProvider for useReactFlow inside ──────
+export default function GraphCanvas(props) {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner {...props} />
+    </ReactFlowProvider>
   );
 }

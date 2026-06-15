@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { T } from '../theme';
 import { nodeColor } from './FileNode';
 
-export default function SidePanel({ selectedNode, repoId, onClose, impactInfo }) {
+export default function SidePanel({ selectedNode, repoId, onClose, impactInfo, graphStats, overview, overviewLoading }) {
   const [tab, setTab]         = useState('metrics');
   const [summary, setSummary] = useState('');
   const [preview, setPreview] = useState('');
@@ -39,17 +39,51 @@ export default function SidePanel({ selectedNode, repoId, onClose, impactInfo })
   if (!selectedNode) {
     return (
       <div style={panel}>
-        <div style={emptyWrap}>
-          <svg width="36" height="36" viewBox="0 0 24 24" fill="none"
-            stroke={T.textMuted} strokeWidth="1.2" style={{ marginBottom: 14 }}>
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <line x1="16" y1="13" x2="8" y2="13"/>
-            <line x1="16" y1="17" x2="8" y2="17"/>
-          </svg>
-          <p style={{ fontSize: 12, color: T.textMuted, textAlign: 'center', lineHeight: 1.7 }}>
-            Click a node to inspect it
-          </p>
+        <div style={emptyHeader}>
+          <span style={emptyTitle}>Repository</span>
+        </div>
+
+        {/* Stats summary */}
+        {graphStats && (
+          <div style={statsGrid}>
+            <StatCell label="Files"      value={graphStats.total_files} color={T.green} />
+            <StatCell label="Deps"       value={graphStats.total_edges} color={T.indigo} />
+            <StatCell label="LoC"        value={graphStats.total_loc?.toLocaleString()} color={T.amber} />
+            <StatCell label="Cycles"     value={graphStats.cycle_count} color={graphStats.cycle_count > 0 ? T.red : T.textMuted} />
+          </div>
+        )}
+
+        <div style={emptyDivider} />
+
+        {/* AI overview */}
+        <div style={{ padding: '0 14px 14px', flex: 1, overflowY: 'auto' }}>
+          <div style={aiLabelSmall}>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"
+              stroke={T.indigo} strokeWidth="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            Project Overview
+          </div>
+          {overviewLoading && !overview && (
+            <div style={skeletonWrap}>
+              {[100, 90, 95, 70].map((w, i) => (
+                <div key={i} style={{ height: 9, borderRadius: 4, marginBottom: 7, width: `${w}%`,
+                  background: `linear-gradient(90deg, ${T.bg2} 25%, ${T.border} 50%, ${T.bg2} 75%)`,
+                  backgroundSize: '200% 100%', animation: `shimmer 1.4s ${i * 0.12}s infinite`,
+                }} />
+              ))}
+            </div>
+          )}
+          {overview && (
+            <p style={{ fontSize: 12, lineHeight: 1.8, color: T.textSecondary, margin: 0 }}>
+              {overview}
+            </p>
+          )}
+          {!overviewLoading && !overview && (
+            <p style={{ fontSize: 11, color: T.textMuted, lineHeight: 1.7, margin: 0 }}>
+              Click a node to inspect it, or wait for the AI overview above.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -296,6 +330,22 @@ function Num({ value, color }) {
   );
 }
 
+function StatCell({ label, value, color }) {
+  return (
+    <div style={{
+      padding: '8px 10px', background: T.bg2,
+      borderRadius: 5, display: 'flex', flexDirection: 'column', gap: 3,
+    }}>
+      <span style={{ fontSize: 9, color: T.textMuted, fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+        {label}
+      </span>
+      <span style={{ fontSize: 16, fontWeight: 700, color: color || T.textPrimary, fontFamily: 'var(--font-mono)' }}>
+        {value ?? '—'}
+      </span>
+    </div>
+  );
+}
+
 /* ── Styles ─────────────────────────────────────────────────────────────────── */
 
 const panel = {
@@ -309,6 +359,29 @@ const emptyWrap = {
   flex: 1, display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center', padding: 24,
 };
+const emptyHeader = {
+  padding: '12px 14px 10px',
+  borderBottom: `1px solid ${T.border}`,
+  flexShrink: 0,
+};
+const emptyTitle = {
+  fontSize: 11, fontWeight: 700, color: T.textMuted,
+  textTransform: 'uppercase', letterSpacing: '0.06em',
+  fontFamily: 'var(--font-mono)',
+};
+const statsGrid = {
+  display: 'grid', gridTemplateColumns: '1fr 1fr',
+  gap: 1, padding: '12px 14px', flexShrink: 0,
+};
+const emptyDivider = { height: 1, background: T.border, flexShrink: 0 };
+const aiLabelSmall = {
+  display: 'flex', alignItems: 'center', gap: 6,
+  fontSize: 9, fontWeight: 700, color: T.textMuted,
+  textTransform: 'uppercase', letterSpacing: '0.06em',
+  fontFamily: 'var(--font-mono)',
+  margin: '12px 0 8px',
+};
+const skeletonWrap = { marginTop: 4 };
 const header = {
   padding: '12px 14px 10px',
   borderBottom: `1px solid ${T.border}`,

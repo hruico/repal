@@ -301,6 +301,9 @@ export default function GraphView() {
           selectedNode={selectedNode}
           repoId={repoId}
           impactInfo={impactInfo}
+          graphStats={stats}
+          overview={overview}
+          overviewLoading={overviewLoading}
           onClose={() => { setSelectedNode(null); setImpactInfo(null); }}
         />
       </div>

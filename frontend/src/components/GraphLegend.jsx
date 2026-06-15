@@ -72,12 +72,20 @@ export default function GraphLegend({ colorMode = 'ext' }) {
 
       <div style={sep} />
       <div style={row}>
-        <span style={{ ...line, background: T.indigo }} />
+        <span style={{ ...arrowLine, background: T.indigo }} />
         <span style={lbl}>dependency</span>
       </div>
       <div style={row}>
-        <span style={{ ...line, background: T.red }} />
+        <span style={{ ...arrowLine, background: T.red }} />
         <span style={lbl}>cycle</span>
+      </div>
+      <div style={row}>
+        <span style={{ ...arrowLine, background: T.teal }} />
+        <span style={lbl}>impact path</span>
+      </div>
+      <div style={row}>
+        <span style={{ ...arrowLine, background: T.amber }} />
+        <span style={lbl}>selected</span>
       </div>
     </div>
   );
@@ -103,6 +111,13 @@ const dot = { width: 7, height: 7, borderRadius: '50%', flexShrink: 0 };
 const lbl = { fontSize: 10, color: T.textSecondary, fontFamily: 'var(--font-mono)' };
 const sep = { borderTop: `1px solid ${T.border}`, margin: '6px 0' };
 const line = { width: 16, height: 2, display: 'inline-block', borderRadius: 1, flexShrink: 0 };
+// Arrow line: line + triangle tip
+const arrowLine = {
+  width: 20, height: 2, display: 'inline-flex', alignItems: 'center',
+  borderRadius: 1, flexShrink: 0, position: 'relative',
+  // We rely on ::after not being possible in inline styles, so we use a
+  // slightly longer line and accept the arrowhead is implicit in the legend label.
+};
 const gradBar = {
   width: '100%', height: 8, borderRadius: 4,
   background: 'linear-gradient(to right, rgb(30,200,30), rgb(255,160,30), rgb(255,30,30))',
