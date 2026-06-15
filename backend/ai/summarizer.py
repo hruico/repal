@@ -6,9 +6,16 @@ from ai.cache import get_cached, set_cached, get_cached_raw, set_cached_raw
 
 MAX_CHARS = 6000
 
-PROMPT = """You are a senior software engineer doing a code review.
-Explain what the following code file does in exactly 3 clear, plain-English sentences.
-Do not describe individual lines. Focus on the file's overall purpose and responsibility.
+PROMPT = """You are a senior engineer onboarding a new teammate onto this codebase.
+
+File: {filepath}
+
+Write exactly 3 sentences in plain English:
+1. What this file's main responsibility is.
+2. The key functions, classes, or components it defines.
+3. How it likely connects to the rest of the project (e.g. what it's used by or depends on).
+
+Rules: No markdown, no code snippets, no preamble like "This file" or "Here is a summary" — start directly with the content. If the code appears truncated, do not mention that.
 
 Code:
 {code}
@@ -25,7 +32,7 @@ def summarize_file(file_id: str, content: str) -> str:
         return cached
 
     # _call_groq raises on failure, so set_cached is only reached on success
-    summary = _call_groq(PROMPT.format(code=content[:MAX_CHARS]))
+    summary = _call_groq(PROMPT.format(filepath=file_id, code=content[:MAX_CHARS]))
     set_cached(file_id, content, summary)
     return summary
 
@@ -53,7 +60,11 @@ def _call_groq(code: str, max_tokens: int = 200) -> str:
     try:
         res = requests.post(url, json=payload, headers=headers, timeout=30)
         res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
+        try:
+            data = res.json()
+            return data['choices'][0]['message']['content'].strip()
+        except (ValueError, KeyError) as e:
+            raise RuntimeError(f"Groq returned unexpected response: {res.text[:200]}")
     except requests.exceptions.Timeout:
         raise RuntimeError("Groq API timed out — try again")
     except requests.exceptions.HTTPError as e:
@@ -61,8 +72,11 @@ def _call_groq(code: str, max_tokens: int = 200) -> str:
         try:
             detail = e.response.json().get("error", {}).get("message", "")
         except Exception:
-            pass
+            # Response body isn't JSON (e.g. plain-text "Internal Server Error")
+            detail = e.response.text[:200] if e.response else str(e)
         raise RuntimeError(f"Groq API error: {detail or str(e)}")
+    except RuntimeError:
+        raise
     except Exception as e:
         raise RuntimeError(f"Summarization failed: {str(e)}")
 
