@@ -388,4 +388,7 @@ if os.path.exists(STATIC_DIR):
 
     @app.get("/{full_path:path}")
     def serve_frontend(full_path: str):
+        # Never intercept API routes — let FastAPI handle 404s for those properly
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found.")
         return FileResponse(os.path.join(STATIC_DIR, "index.html"))
