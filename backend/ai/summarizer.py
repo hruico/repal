@@ -10,7 +10,7 @@ PROMPT = """You are a senior engineer onboarding a new teammate onto this codeba
 
 File: {filepath}
 
-Write exactly 3 sentences in plain English:
+Write in plain English:
 1. What this file's main responsibility is.
 2. The key functions, classes, or components it defines.
 3. How it likely connects to the rest of the project (e.g. what it's used by or depends on).
