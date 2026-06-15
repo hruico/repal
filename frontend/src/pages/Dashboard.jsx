@@ -81,13 +81,7 @@ export default function Dashboard() {
         </div>
 
         {/* Feature pills — empty state only */}
-        {!loading && repos.length === 0 && (
-          <div style={pills}>
-            {['Dependency graph', 'LoC & Complexity', 'AI summaries', 'Edge highlighting', 'No cloud'].map(f => (
-              <span key={f} style={pill}>{f}</span>
-            ))}
-          </div>
-        )}
+
 
         {/* Divider */}
         <div style={divider} />
