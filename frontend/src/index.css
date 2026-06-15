@@ -81,7 +81,7 @@ input, select {
 
 /* ── React Flow dark overrides ──────────────────────────────────────────────── */
 .react-flow__background {
-  background: #080a0f !important;
+  background: transparent !important;
 }
 .react-flow__minimap {
   background: #0d0f14 !important;
@@ -139,4 +139,11 @@ input, select {
   0%   { opacity: 0; transform: translateX(28px) scale(0.97); }
   60%  { opacity: 1; transform: translateX(-4px) scale(1.005); }
   100% { opacity: 1; transform: translateX(0)    scale(1); }
+}
+
+/* ── Canvas transparency (let CanvasGradient show through) ─────────────────── */
+.react-flow__pane,
+.react-flow__renderer,
+.react-flow__viewport {
+  background: transparent !important;
 }

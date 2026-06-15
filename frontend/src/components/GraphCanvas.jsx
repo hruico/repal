@@ -4,7 +4,6 @@ import ReactFlow, {
   useNodesState, useEdgesState,
   BezierEdge, MarkerType,
   useReactFlow, ReactFlowProvider,
-  Panel,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { T } from '../theme';
@@ -13,58 +12,98 @@ import GraphLegend from './GraphLegend';
 
 const edgeTypes = { default: BezierEdge };
 
-// ── Radial layout ─────────────────────────────────────────────────────────────
-function applyRadialLayout(nodes, edges) {
+// ── Node dimensions (must match FileNode.jsx) ─────────────────────────────────
+const NODE_W = 140;   // actual rendered width  + margin
+const NODE_H = 70;    // actual rendered height + margin
+const COL_GAP = 90;   // horizontal gap between columns
+const ROW_GAP = 22;   // vertical gap between rows
+
+// ── Layered (hierarchical) layout ────────────────────────────────────────────
+// Groups nodes into topological layers (depth from sources).
+// Nodes in the same layer stack vertically; layers spread horizontally.
+// Cycle members are placed together in the middle layer.
+function applyLayeredLayout(nodes, edges) {
   if (nodes.length === 0) return [];
 
-  const degree = {};
+  const ids = new Set(nodes.map(n => n.id));
+
+  // Build adjacency (source → targets) and reverse (target → sources)
+  const out = new Map();   // source → [target]
+  const inc = new Map();   // target → [source]
+  nodes.forEach(n => { out.set(n.id, []); inc.set(n.id, []); });
   edges.forEach(e => {
-    degree[e.source] = (degree[e.source] || 0) + 1;
-    degree[e.target] = (degree[e.target] || 0) + 1;
-  });
-
-  const groups = {};
-  nodes.forEach(n => {
-    const parts = n.id.split('/');
-    const group = parts.length > 1 ? parts[0] : '__root__';
-    if (!groups[group]) groups[group] = [];
-    groups[group].push(n);
-  });
-
-  const groupKeys = Object.keys(groups);
-  const numGroups = groupKeys.length;
-  const outerRadius = Math.max(280, numGroups * 80);
-  const positioned = [];
-
-  groupKeys.forEach((gk, gi) => {
-    const groupNodes = groups[gk];
-    const groupAngle = (gi / numGroups) * 2 * Math.PI - Math.PI / 2;
-    const gx = Math.cos(groupAngle) * outerRadius;
-    const gy = Math.sin(groupAngle) * outerRadius;
-
-    if (groupNodes.length === 1) {
-      positioned.push({ ...groupNodes[0], position: { x: gx, y: gy } });
-      return;
+    if (ids.has(e.source) && ids.has(e.target)) {
+      out.get(e.source)?.push(e.target);
+      inc.get(e.target)?.push(e.source);
     }
+  });
 
-    const sorted = [...groupNodes].sort((a, b) =>
-      (degree[b.id] || 0) - (degree[a.id] || 0)
-    );
-    const innerRadius = Math.max(60, sorted.length * 18);
+  // ── Kahn's BFS to assign layers ───────────────────────────────────────────
+  // Nodes whose in-degree drops to 0 are "ready" — they go into the next layer.
+  // Cycle members never fully drain to 0; we handle them separately.
+  const inDeg = new Map();
+  nodes.forEach(n => inDeg.set(n.id, (inc.get(n.id) || []).length));
 
-    sorted.forEach((node, ni) => {
-      const localAngle = (ni / sorted.length) * 2 * Math.PI - Math.PI / 2;
-      const r = ni === 0 ? 0 : innerRadius;
+  const layerOf = new Map();
+  const queue = nodes.filter(n => inDeg.get(n.id) === 0).map(n => n.id);
+  queue.forEach(id => layerOf.set(id, 0));
+
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const curLayer = layerOf.get(cur);
+    (out.get(cur) || []).forEach(tgt => {
+      const newDeg = inDeg.get(tgt) - 1;
+      inDeg.set(tgt, newDeg);
+      const proposed = curLayer + 1;
+      if (!layerOf.has(tgt) || layerOf.get(tgt) < proposed) {
+        layerOf.set(tgt, proposed);
+      }
+      if (newDeg === 0) queue.push(tgt);
+    });
+  }
+
+  // Any node not yet assigned is part of a cycle — put it in a "middle" layer
+  const maxLayer = layerOf.size > 0 ? Math.max(...layerOf.values()) : 0;
+  const cycleLayer = Math.floor(maxLayer / 2) + 1;
+  nodes.forEach(n => {
+    if (!layerOf.has(n.id)) layerOf.set(n.id, cycleLayer);
+  });
+
+  // ── Group nodes by layer ──────────────────────────────────────────────────
+  const layers = new Map();
+  nodes.forEach(n => {
+    const l = layerOf.get(n.id);
+    if (!layers.has(l)) layers.set(l, []);
+    layers.get(l).push(n);
+  });
+
+  // Sort layers by key, sort each layer's nodes by their degree (hub first)
+  const degree = new Map();
+  nodes.forEach(n => degree.set(n.id, (out.get(n.id)?.length || 0) + (inc.get(n.id)?.length || 0)));
+
+  const sortedLayers = [...layers.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([l, ns]) => [l, [...ns].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))]);
+
+  // ── Assign x/y positions ──────────────────────────────────────────────────
+  const positioned = [];
+  sortedLayers.forEach(([, layerNodes], colIdx) => {
+    const colX = colIdx * (NODE_W + COL_GAP);
+    const totalH = layerNodes.length * NODE_H + (layerNodes.length - 1) * ROW_GAP;
+    const startY = -totalH / 2;
+    layerNodes.forEach((node, rowIdx) => {
       positioned.push({
         ...node,
         position: {
-          x: gx + Math.cos(localAngle) * r,
-          y: gy + Math.sin(localAngle) * r,
+          x: colX,
+          y: startY + rowIdx * (NODE_H + ROW_GAP),
         },
       });
     });
   });
 
+  // Centre the whole layout
   const xs = positioned.map(n => n.position.x);
   const ys = positioned.map(n => n.position.y);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
@@ -98,19 +137,14 @@ function getImpactSet(startId, direction, dependentsMap, dependenciesMap) {
   return { visited, depthMap };
 }
 
-// ── Edge builder — dashed curves, React Flow site style ───────────────────────
+// ── Edge builder ──────────────────────────────────────────────────────────────
 function buildEdge(e, opacity = 0.25, strokeWidth = 1, highlightColor = null) {
   const isCycle = e.data?.isCycle;
   const stroke = highlightColor ?? (isCycle ? T.red : 'rgba(140,150,180,0.7)');
   return {
     ...e,
     type: 'default',
-    markerEnd: {
-      type: MarkerType.ArrowClosed,
-      width: 9,
-      height: 9,
-      color: stroke,
-    },
+    markerEnd: { type: MarkerType.ArrowClosed, width: 9, height: 9, color: stroke },
     style: {
       stroke,
       strokeWidth,
@@ -120,25 +154,18 @@ function buildEdge(e, opacity = 0.25, strokeWidth = 1, highlightColor = null) {
   };
 }
 
-// ── Folder region overlay (Option A from the plan) ────────────────────────────
-// Rendered as an absolutely-positioned SVG inside the RF viewport.
-// We re-use the same group-keying logic as applyRadialLayout.
-function GroupRegions({ nodes, colorMode }) {
+// ── Folder region overlay ─────────────────────────────────────────────────────
+function GroupRegions({ nodes }) {
   const { getViewport } = useReactFlow();
   const [vp, setVp] = useState({ x: 0, y: 0, zoom: 1 });
 
-  // Recompute on every animation frame so it tracks pan/zoom smoothly
   useEffect(() => {
     let raf;
-    const tick = () => {
-      setVp(getViewport());
-      raf = requestAnimationFrame(tick);
-    };
+    const tick = () => { setVp(getViewport()); raf = requestAnimationFrame(tick); };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [getViewport]);
 
-  // Group visible (non-hidden) nodes by top-level directory
   const groups = useMemo(() => {
     const map = {};
     nodes.forEach(n => {
@@ -150,55 +177,41 @@ function GroupRegions({ nodes, colorMode }) {
     return map;
   }, [nodes]);
 
-  // Palette for region fills — cycle through a few muted accent colours
   const palette = [T.indigo, T.teal, T.amber, T.green, '#a78bfa', '#fb923c'];
-
-  const PAD = 36; // padding around the bounding box
+  const PAD = 28;
 
   return (
-    <svg
-      style={{
-        position: 'absolute', inset: 0,
-        width: '100%', height: '100%',
-        pointerEvents: 'none', zIndex: 0,
-        overflow: 'visible',
-      }}
-    >
+    <svg style={{
+      position: 'absolute', inset: 0,
+      width: '100%', height: '100%',
+      pointerEvents: 'none', zIndex: 0, overflow: 'visible',
+    }}>
       {Object.entries(groups).map(([group, groupNodes], gi) => {
-        if (groupNodes.length < 2) return null; // skip singletons
-
-        // Bounding box in graph coords
+        if (groupNodes.length < 2) return null;
         const xs = groupNodes.map(n => n.position.x);
         const ys = groupNodes.map(n => n.position.y);
         const minX = Math.min(...xs) - PAD;
         const minY = Math.min(...ys) - PAD;
-        const maxX = Math.max(...xs) + PAD + 96; // +96 to account for max node width
-        const maxY = Math.max(...ys) + PAD + 96;
-
-        // Transform to screen coords
+        const maxX = Math.max(...xs) + NODE_W + PAD;
+        const maxY = Math.max(...ys) + NODE_H + PAD;
         const sx = minX * vp.zoom + vp.x;
         const sy = minY * vp.zoom + vp.y;
         const sw = (maxX - minX) * vp.zoom;
         const sh = (maxY - minY) * vp.zoom;
-
         const accent = palette[gi % palette.length];
         const labelName = group === '__root__' ? '/' : group + '/';
-
         return (
           <g key={group}>
-            <rect
-              x={sx} y={sy} width={sw} height={sh}
-              rx={16} ry={16}
-              fill={`${accent}06`}
-              stroke={`${accent}20`}
+            <rect x={sx} y={sy} width={sw} height={sh}
+              rx={12} ry={12}
+              fill={`${accent}05`}
+              stroke={`${accent}18`}
               strokeWidth={1}
-              strokeDasharray="4 4"
+              strokeDasharray="5 4"
             />
-            <text
-              x={sx + 12}
-              y={sy + 18}
-              fontSize={10 * Math.min(vp.zoom, 1)}
-              fill={`${accent}60`}
+            <text x={sx + 10} y={sy + 16}
+              fontSize={Math.max(9, 10 * Math.min(vp.zoom, 1))}
+              fill={`${accent}55`}
               fontFamily="var(--font-mono)"
               fontWeight={700}
               letterSpacing="0.04em"
@@ -212,11 +225,24 @@ function GroupRegions({ nodes, colorMode }) {
   );
 }
 
-// ── Inner canvas (needs to be inside ReactFlowProvider for useReactFlow) ──────
-function CanvasInner({
-  rawNodes, rawEdges, colorMode, onNodeClick,
-  impactMode, impactDirection,
-}) {
+// ── Canvas gradient background ────────────────────────────────────────────────
+// The reddish-purple radial glow from the React Flow site screenshot.
+function CanvasGradient() {
+  return (
+    <div style={{
+      position: 'absolute', inset: 0,
+      zIndex: 0, pointerEvents: 'none',
+      background: `
+        radial-gradient(ellipse 55% 45% at 68% 38%, rgba(110,30,80,0.22) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 35% at 30% 65%, rgba(40,20,90,0.18) 0%, transparent 65%),
+        #080a0f
+      `,
+    }} />
+  );
+}
+
+// ── Inner canvas ──────────────────────────────────────────────────────────────
+function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, impactDirection }) {
   const nodeTypesMemo = useMemo(() => ({
     fileNode: (props) => <FileNode {...props} colorMode={colorMode} />,
   }), [colorMode]);
@@ -234,7 +260,7 @@ function CanvasInner({
   );
 
   const initialLaid = useMemo(
-    () => applyRadialLayout(rawNodes, filteredEdges),
+    () => applyLayeredLayout(rawNodes, filteredEdges),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layoutKey]
   );
@@ -242,30 +268,22 @@ function CanvasInner({
   const [nodes, setNodes, onNodesChange] = useNodesState(initialLaid);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Structural re-layout
   useEffect(() => {
-    setNodes(applyRadialLayout(rawNodes, filteredEdges));
+    setNodes(applyLayeredLayout(rawNodes, filteredEdges));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layoutKey]);
 
-  // Search/focus visibility
   useEffect(() => {
-    setNodes(prev =>
-      prev.map(n => ({ ...n, hidden: !validNodeIds.has(n.id) }))
-    );
+    setNodes(prev => prev.map(n => ({ ...n, hidden: !validNodeIds.has(n.id) })));
   }, [validNodeIds, setNodes]);
 
-  // Base edges — dim by default, with arrowheads
   const baseEdges = useMemo(
-    () => filteredEdges.map(e => buildEdge(e, 0.15, 1)),
+    () => filteredEdges.map(e => buildEdge(e, 0.18, 1)),
     [filteredEdges]
   );
 
-  useEffect(() => {
-    setEdges(baseEdges);
-  }, [baseEdges, setEdges]);
+  useEffect(() => { setEdges(baseEdges); }, [baseEdges, setEdges]);
 
-  // Adjacency maps
   const dependentsMap = useMemo(() => {
     const map = new Map();
     filteredEdges.forEach(e => {
@@ -284,20 +302,18 @@ function CanvasInner({
     return map;
   }, [filteredEdges]);
 
-  // Track whether there's an active click-selection so hover doesn't override it
   const [clickSelected, setClickSelected] = useState(null);
 
   const resetEdges = useCallback(() => {
-    setEdges(eds => eds.map(e => buildEdge(e, 0.15, 1)));
+    setEdges(eds => eds.map(e => buildEdge(e, 0.18, 1)));
   }, [setEdges]);
 
   const resetNodes = useCallback(() => {
     setNodes(prev => prev.map(n => ({ ...n, style: undefined })));
   }, [setNodes]);
 
-  // ── Node hover (only when no click-selection active) ──────────────────────
   const handleNodeMouseEnter = useCallback((_, node) => {
-    if (clickSelected) return; // don't override active selection
+    if (clickSelected) return;
     setEdges(eds => eds.map(e => {
       const hit = e.source === node.id || e.target === node.id;
       if (!hit) return e;
@@ -310,15 +326,11 @@ function CanvasInner({
     resetEdges();
   }, [clickSelected, resetEdges]);
 
-  // ── Click handler ─────────────────────────────────────────────────────────
   const handleNodeClick = useCallback((_, node) => {
     setClickSelected(node.id);
 
     if (impactMode) {
-      const { visited, depthMap } = getImpactSet(
-        node.id, impactDirection, dependentsMap, dependenciesMap
-      );
-
+      const { visited, depthMap } = getImpactSet(node.id, impactDirection, dependentsMap, dependenciesMap);
       const directMap = impactDirection === 'dependents' ? dependentsMap : dependenciesMap;
       const directNeighbors = directMap.get(node.id) || new Set();
       const directCount = directNeighbors.size;
@@ -337,9 +349,7 @@ function CanvasInner({
 
       setEdges(eds => eds.map(e => {
         const isConnected = visited.has(e.source) && visited.has(e.target);
-        return isConnected
-          ? buildEdge(e, 0.9, 1.5, T.teal)
-          : buildEdge(e, 0.06, 0.5);
+        return isConnected ? buildEdge(e, 0.9, 1.5, T.teal) : buildEdge(e, 0.06, 0.5);
       }));
 
       onNodeClick(node, { impactMode: true, impactDirection, totalAffected: visited.size - 1, directCount, transitiveCount });
@@ -347,9 +357,7 @@ function CanvasInner({
       resetNodes();
       setEdges(eds => eds.map(e => {
         const hit = e.source === node.id || e.target === node.id;
-        return hit
-          ? buildEdge(e, 1, 2, T.amber)
-          : buildEdge(e, 0.1, 0.8);
+        return hit ? buildEdge(e, 1, 2, T.amber) : buildEdge(e, 0.08, 0.8);
       }));
       onNodeClick(node, null);
     }
@@ -367,8 +375,11 @@ function CanvasInner({
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {/* Folder region overlay — sits behind the RF canvas */}
-      <GroupRegions nodes={nodes} colorMode={colorMode} />
+      {/* Canvas gradient — reddish-purple glow like the RF site */}
+      <CanvasGradient />
+
+      {/* Folder region overlay */}
+      <GroupRegions nodes={nodes} />
 
       <ReactFlow
         nodes={nodes}
@@ -382,27 +393,22 @@ function CanvasInner({
         nodeTypes={nodeTypesMemo}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.14 }}
+        fitViewOptions={{ padding: 0.16 }}
         defaultEdgeOptions={{
           type: 'default',
           markerEnd: { type: MarkerType.ArrowClosed, width: 9, height: 9, color: 'rgba(140,150,180,0.5)' },
-          style: { stroke: 'rgba(140,150,180,0.5)', strokeWidth: 1, opacity: 0.25, strokeDasharray: '5 4' },
+          style: { stroke: 'rgba(140,150,180,0.5)', strokeWidth: 1, opacity: 0.18, strokeDasharray: '5 4' },
           animated: false,
         }}
+        style={{ background: 'transparent' }}
       >
-        <MiniMap
-          nodeColor={miniMapColor}
-          maskColor="rgba(7,8,12,0.82)"
-          nodeStrokeWidth={0}
-          zoomable pannable
-        />
+        <MiniMap nodeColor={miniMapColor} maskColor="rgba(7,8,12,0.82)" nodeStrokeWidth={0} zoomable pannable />
         <Controls />
-        <Background variant="dots" gap={24} size={1} color="rgba(255,255,255,0.06)" />
+        <Background variant="dots" gap={24} size={1} color="rgba(255,255,255,0.055)" />
       </ReactFlow>
 
       <GraphLegend colorMode={colorMode} />
 
-      {/* Impact Mode indicator badge */}
       {impactMode && (
         <div style={{
           position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)',
@@ -413,11 +419,7 @@ function CanvasInner({
           backdropFilter: 'blur(8px)',
           display: 'flex', alignItems: 'center', gap: 6,
         }}>
-          <span style={{
-            width: 7, height: 7, borderRadius: '50%',
-            background: T.teal, display: 'inline-block',
-            boxShadow: `0 0 6px ${T.teal}`,
-          }} />
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: T.teal, display: 'inline-block', boxShadow: `0 0 6px ${T.teal}` }} />
           IMPACT MODE · {impactDirection === 'dependents' ? 'Who breaks?' : 'What does it need?'}
         </div>
       )}
@@ -425,7 +427,6 @@ function CanvasInner({
   );
 }
 
-// ── Public export — wraps with ReactFlowProvider for useReactFlow inside ──────
 export default function GraphCanvas(props) {
   return (
     <ReactFlowProvider>
