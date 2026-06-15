@@ -13,39 +13,40 @@ import GraphLegend from './GraphLegend';
 const edgeTypes = { default: BezierEdge };
 
 // ── Node dimensions (must match FileNode.jsx exactly) ────────────────────────
-const NODE_W  = 140;   // card width
-const NODE_H  = 78;    // card height — sized for 3 rows + accent bar + padding
-const COL_GAP = 100;   // horizontal gap between columns
-const ROW_GAP = 32;    // vertical gap between rows in the same column
+const NODE_W   = 140;
+const NODE_H   = 78;
+const COL_GAP  = 160;  // horizontal gap between dep-layers within a group
+const ROW_GAP  = 48;   // vertical gap between nodes in the same column
+const GRP_GAP  = 120;  // vertical gap BETWEEN folder groups
 
-// ── Layered (hierarchical) layout ────────────────────────────────────────────
-// Groups nodes into topological layers (depth from sources).
-// Nodes in the same layer stack vertically; layers spread horizontally.
-// Cycle members are placed together in the middle layer.
-function applyLayeredLayout(nodes, edges) {
-  if (nodes.length === 0) return [];
+// ── Per-group layered layout ──────────────────────────────────────────────────
+// 1. Split nodes by top-level directory (folder group).
+// 2. Run Kahn's BFS topological layering per group independently.
+// 3. Stack groups vertically with GRP_GAP between them.
+// This guarantees all files from the same folder stay in their own visual block,
+// with no interleaving, so the GroupRegions overlay is always unambiguous.
 
-  const ids = new Set(nodes.map(n => n.id));
+function _layerGroup(groupNodes, edges, allIds) {
+  if (groupNodes.length === 0) return [];
+  const ids = new Set(groupNodes.map(n => n.id));
 
-  // Build adjacency (source → targets) and reverse (target → sources)
-  const out = new Map();   // source → [target]
-  const inc = new Map();   // target → [source]
-  nodes.forEach(n => { out.set(n.id, []); inc.set(n.id, []); });
+  const out = new Map();
+  const inc = new Map();
+  groupNodes.forEach(n => { out.set(n.id, []); inc.set(n.id, []); });
+
   edges.forEach(e => {
+    // Only count edges where BOTH endpoints are in this group for layer calc
     if (ids.has(e.source) && ids.has(e.target)) {
       out.get(e.source)?.push(e.target);
       inc.get(e.target)?.push(e.source);
     }
   });
 
-  // ── Kahn's BFS to assign layers ───────────────────────────────────────────
-  // Nodes whose in-degree drops to 0 are "ready" — they go into the next layer.
-  // Cycle members never fully drain to 0; we handle them separately.
   const inDeg = new Map();
-  nodes.forEach(n => inDeg.set(n.id, (inc.get(n.id) || []).length));
+  groupNodes.forEach(n => inDeg.set(n.id, (inc.get(n.id) || []).length));
 
   const layerOf = new Map();
-  const queue = nodes.filter(n => inDeg.get(n.id) === 0).map(n => n.id);
+  const queue = groupNodes.filter(n => inDeg.get(n.id) === 0).map(n => n.id);
   queue.forEach(id => layerOf.set(id, 0));
 
   let head = 0;
@@ -53,65 +54,114 @@ function applyLayeredLayout(nodes, edges) {
     const cur = queue[head++];
     const curLayer = layerOf.get(cur);
     (out.get(cur) || []).forEach(tgt => {
-      const newDeg = inDeg.get(tgt) - 1;
-      inDeg.set(tgt, newDeg);
+      const nd = inDeg.get(tgt) - 1;
+      inDeg.set(tgt, nd);
       const proposed = curLayer + 1;
-      if (!layerOf.has(tgt) || layerOf.get(tgt) < proposed) {
+      if (!layerOf.has(tgt) || layerOf.get(tgt) < proposed)
         layerOf.set(tgt, proposed);
-      }
-      if (newDeg === 0) queue.push(tgt);
+      if (nd === 0) queue.push(tgt);
     });
   }
 
-  // Any node not yet assigned is part of a cycle — put it in a "middle" layer
-  const maxLayer = layerOf.size > 0 ? Math.max(...layerOf.values()) : 0;
-  const cycleLayer = Math.floor(maxLayer / 2) + 1;
-  nodes.forEach(n => {
-    if (!layerOf.has(n.id)) layerOf.set(n.id, cycleLayer);
-  });
+  // Cycle nodes — put in middle layer of this group
+  const maxL = layerOf.size > 0 ? Math.max(...layerOf.values()) : 0;
+  const cycleL = Math.max(0, Math.floor(maxL / 2));
+  groupNodes.forEach(n => { if (!layerOf.has(n.id)) layerOf.set(n.id, cycleL); });
 
-  // ── Group nodes by layer ──────────────────────────────────────────────────
-  const layers = new Map();
-  nodes.forEach(n => {
-    const l = layerOf.get(n.id);
-    if (!layers.has(l)) layers.set(l, []);
-    layers.get(l).push(n);
-  });
-
-  // Sort layers by key, sort each layer's nodes by their degree (hub first)
+  // Collect into sorted columns
   const degree = new Map();
-  nodes.forEach(n => degree.set(n.id, (out.get(n.id)?.length || 0) + (inc.get(n.id)?.length || 0)));
+  groupNodes.forEach(n => degree.set(n.id,
+    (out.get(n.id)?.length || 0) + (inc.get(n.id)?.length || 0)));
 
-  const sortedLayers = [...layers.entries()]
+  const cols = new Map();
+  groupNodes.forEach(n => {
+    const l = layerOf.get(n.id);
+    if (!cols.has(l)) cols.set(l, []);
+    cols.get(l).push(n);
+  });
+
+  const sortedCols = [...cols.entries()]
     .sort(([a], [b]) => a - b)
-    .map(([l, ns]) => [l, [...ns].sort((a, b) => (degree.get(b.id) || 0) - (degree.get(a.id) || 0))]);
+    .map(([, ns]) => [...ns].sort((a, b) =>
+      (degree.get(b.id) || 0) - (degree.get(a.id) || 0)));
 
-  // ── Assign x/y positions ──────────────────────────────────────────────────
+  // Position within this group (origin at 0,0 — caller offsets vertically)
   const positioned = [];
-  sortedLayers.forEach(([, layerNodes], colIdx) => {
-    const colX = colIdx * (NODE_W + COL_GAP);
-    const totalH = layerNodes.length * NODE_H + (layerNodes.length - 1) * ROW_GAP;
+  sortedCols.forEach((colNodes, ci) => {
+    const colX = ci * (NODE_W + COL_GAP);
+    const totalH = colNodes.length * NODE_H + (colNodes.length - 1) * ROW_GAP;
     const startY = -totalH / 2;
-    layerNodes.forEach((node, rowIdx) => {
+    colNodes.forEach((node, ri) => {
       positioned.push({
         ...node,
-        width:  NODE_W,   // tell React Flow the exact footprint
-        height: NODE_H,
-        position: {
-          x: colX,
-          y: startY + rowIdx * (NODE_H + ROW_GAP),
-        },
+        width: NODE_W, height: NODE_H,
+        position: { x: colX, y: startY + ri * (NODE_H + ROW_GAP) },
       });
     });
   });
 
-  // Centre the whole layout
-  const xs = positioned.map(n => n.position.x);
-  const ys = positioned.map(n => n.position.y);
+  return positioned;
+}
+
+function applyLayeredLayout(nodes, edges) {
+  if (nodes.length === 0) return [];
+
+  // Split by top-level folder
+  const groupMap = new Map();
+  nodes.forEach(n => {
+    const parts = n.id.split('/');
+    const grp = parts.length > 1 ? parts[0] : '__root__';
+    if (!groupMap.has(grp)) groupMap.set(grp, []);
+    groupMap.get(grp).push(n);
+  });
+
+  // Sort groups: larger groups first so the biggest cluster is on top
+  const sortedGroups = [...groupMap.entries()]
+    .sort(([, a], [, b]) => b.length - a.length);
+
+  const allPositioned = [];
+  let cursorY = 0;
+
+  sortedGroups.forEach(([, groupNodes], gi) => {
+    const laid = _layerGroup(groupNodes, edges, new Set(nodes.map(n => n.id)));
+
+    // Find the bounding box of this group's internal layout
+    if (laid.length === 0) return;
+    const ys = laid.map(n => n.position.y);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys) + NODE_H;
+    const groupH = maxY - minY;
+
+    // Centre group horizontally
+    const xs = laid.map(n => n.position.x);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs) + NODE_W;
+    const groupW = maxX - minX;
+    const offsetX = -groupW / 2 - minX;
+
+    // Stack vertically: shift so group top sits at cursorY
+    const offsetY = cursorY - minY;
+
+    laid.forEach(n => {
+      allPositioned.push({
+        ...n,
+        position: {
+          x: n.position.x + offsetX,
+          y: n.position.y + offsetY,
+        },
+      });
+    });
+
+    cursorY += groupH + GRP_GAP;
+  });
+
+  // Centre the whole diagram
+  const xs = allPositioned.map(n => n.position.x);
+  const ys = allPositioned.map(n => n.position.y);
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
 
-  return positioned.map(n => ({
+  return allPositioned.map(n => ({
     ...n,
     position: { x: n.position.x - cx, y: n.position.y - cy },
   }));
@@ -140,9 +190,10 @@ function getImpactSet(startId, direction, dependentsMap, dependenciesMap) {
 }
 
 // ── Edge builder ──────────────────────────────────────────────────────────────
-function buildEdge(e, opacity = 0.25, strokeWidth = 1, highlightColor = null) {
+function buildEdge(e, opacity = 0.55, strokeWidth = 1, highlightColor = null) {
   const isCycle = e.data?.isCycle;
-  const stroke = highlightColor ?? (isCycle ? T.red : 'rgba(140,150,180,0.7)');
+  // Default resting colour: noticeably visible but not distracting
+  const stroke = highlightColor ?? (isCycle ? T.red : 'rgba(180,190,220,0.85)');
   return {
     ...e,
     type: 'default',
@@ -156,8 +207,8 @@ function buildEdge(e, opacity = 0.25, strokeWidth = 1, highlightColor = null) {
   };
 }
 
-// ── Folder region overlay ─────────────────────────────────────────────────────
-function GroupRegions({ nodes }) {
+// ── Folder region overlay + cross-folder arrows ───────────────────────────────
+function GroupRegions({ nodes, filteredEdges }) {
   const { getViewport } = useReactFlow();
   const [vp, setVp] = useState({ x: 0, y: 0, zoom: 1 });
 
@@ -168,6 +219,7 @@ function GroupRegions({ nodes }) {
     return () => cancelAnimationFrame(raf);
   }, [getViewport]);
 
+  // Build group → nodes map (skip hidden)
   const groups = useMemo(() => {
     const map = {};
     nodes.forEach(n => {
@@ -179,8 +231,57 @@ function GroupRegions({ nodes }) {
     return map;
   }, [nodes]);
 
+  // Node → group lookup
+  const nodeGroup = useMemo(() => {
+    const map = {};
+    nodes.forEach(n => {
+      map[n.id] = n.id.split('/').length > 1 ? n.id.split('/')[0] : '__root__';
+    });
+    return map;
+  }, [nodes]);
+
+  // Count cross-group edges: { "groupA->groupB": count }
+  const crossEdgeCounts = useMemo(() => {
+    const counts = {};
+    filteredEdges.forEach(e => {
+      const sg = nodeGroup[e.source];
+      const tg = nodeGroup[e.target];
+      if (sg && tg && sg !== tg) {
+        const key = `${sg}→${tg}`;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [filteredEdges, nodeGroup]);
+
   const palette = [T.indigo, T.teal, T.amber, T.green, '#a78bfa', '#fb923c'];
-  const PAD = 28;
+  const PAD = 36;
+
+  // Compute screen bounding box for each group
+  const groupBoxes = useMemo(() => {
+    const boxes = {};
+    Object.entries(groups).forEach(([group, groupNodes]) => {
+      const xs = groupNodes.map(n => n.position.x);
+      const ys = groupNodes.map(n => n.position.y);
+      boxes[group] = {
+        minX: Math.min(...xs) - PAD,
+        minY: Math.min(...ys) - PAD,
+        maxX: Math.max(...xs) + NODE_W + PAD,
+        maxY: Math.max(...ys) + NODE_H + PAD,
+      };
+    });
+    return boxes;
+  }, [groups]);
+
+  // Convert graph-space box to screen-space box
+  const toScreen = (box) => ({
+    sx: box.minX * vp.zoom + vp.x,
+    sy: box.minY * vp.zoom + vp.y,
+    sw: (box.maxX - box.minX) * vp.zoom,
+    sh: (box.maxY - box.minY) * vp.zoom,
+  });
+
+  const groupKeys = Object.keys(groups);
 
   return (
     <svg style={{
@@ -188,37 +289,89 @@ function GroupRegions({ nodes }) {
       width: '100%', height: '100%',
       pointerEvents: 'none', zIndex: 0, overflow: 'visible',
     }}>
-      {Object.entries(groups).map(([group, groupNodes], gi) => {
-        if (groupNodes.length < 2) return null;
-        const xs = groupNodes.map(n => n.position.x);
-        const ys = groupNodes.map(n => n.position.y);
-        const minX = Math.min(...xs) - PAD;
-        const minY = Math.min(...ys) - PAD;
-        const maxX = Math.max(...xs) + NODE_W + PAD;
-        const maxY = Math.max(...ys) + NODE_H + PAD;
-        const sx = minX * vp.zoom + vp.x;
-        const sy = minY * vp.zoom + vp.y;
-        const sw = (maxX - minX) * vp.zoom;
-        const sh = (maxY - minY) * vp.zoom;
+
+      {/* ── Group region boxes ── */}
+      {groupKeys.map((group, gi) => {
+        const groupNodes = groups[group];
+        if (!groupNodes?.length) return null;
+        const box = groupBoxes[group];
+        const { sx, sy, sw, sh } = toScreen(box);
         const accent = palette[gi % palette.length];
         const labelName = group === '__root__' ? '/' : group + '/';
+        const labelFontSize = Math.max(10, 13 * Math.min(vp.zoom, 1));
+
         return (
           <g key={group}>
             <rect x={sx} y={sy} width={sw} height={sh}
-              rx={12} ry={12}
-              fill={`${accent}05`}
-              stroke={`${accent}18`}
-              strokeWidth={1}
-              strokeDasharray="5 4"
+              rx={14} ry={14} fill={`${accent}09`} />
+            <rect x={sx} y={sy} width={sw} height={sh}
+              rx={14} ry={14} fill="none"
+              stroke={`${accent}55`} strokeWidth={1.5} />
+            {/* Label pill */}
+            <rect
+              x={sx + 12} y={sy - labelFontSize * 0.75}
+              width={labelName.length * labelFontSize * 0.62 + 16}
+              height={labelFontSize * 1.5}
+              rx={4} ry={4}
+              fill={`${accent}22`} stroke={`${accent}55`} strokeWidth={1}
             />
-            <text x={sx + 10} y={sy + 16}
-              fontSize={Math.max(9, 10 * Math.min(vp.zoom, 1))}
-              fill={`${accent}55`}
+            <text
+              x={sx + 20} y={sy + labelFontSize * 0.45}
+              fontSize={labelFontSize}
+              fill={accent}
               fontFamily="var(--font-mono)"
-              fontWeight={700}
-              letterSpacing="0.04em"
+              fontWeight={700} letterSpacing="0.04em"
             >
               {labelName}
+            </text>
+          </g>
+        );
+      })}
+
+      {/* ── Cross-folder summary: small chips on the bottom border of source group ── */}
+      {Object.entries(crossEdgeCounts).map(([key, count]) => {
+        const [srcGrp, tgtGrp] = key.split('→');
+        const srcBox = groupBoxes[srcGrp];
+        if (!srcBox) return null;
+
+        const si = groupKeys.indexOf(srcGrp);
+        const accent = palette[si % palette.length];
+
+        const { sx, sy, sw, sh } = toScreen(srcBox);
+
+        // Stack chips along the bottom edge, offset by index
+        const chipIdx = Object.keys(crossEdgeCounts)
+          .filter(k => k.startsWith(srcGrp + '→'))
+          .indexOf(key);
+
+        const chipW = Math.max(80, (tgtGrp.length + 6) * 7.5) * Math.min(vp.zoom, 1);
+        const chipH = 18 * Math.min(vp.zoom, 1);
+        const chipX = sx + 12 + chipIdx * (chipW + 6);
+        const chipY = sy + sh - chipH / 2;
+        const fontSize = Math.max(8, 9 * Math.min(vp.zoom, 1));
+        const label = `→ ${tgtGrp}/ ×${count}`;
+
+        return (
+          <g key={key}>
+            <rect
+              x={chipX} y={chipY}
+              width={chipW} height={chipH}
+              rx={chipH / 2} ry={chipH / 2}
+              fill={`${accent}18`}
+              stroke={`${accent}50`}
+              strokeWidth={1}
+            />
+            <text
+              x={chipX + chipW / 2}
+              y={chipY + chipH * 0.66}
+              textAnchor="middle"
+              fontSize={fontSize}
+              fill={accent}
+              fontFamily="var(--font-mono)"
+              fontWeight={600}
+              letterSpacing="0.02em"
+            >
+              {label}
             </text>
           </g>
         );
@@ -280,7 +433,7 @@ function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, i
   }, [validNodeIds, setNodes]);
 
   const baseEdges = useMemo(
-    () => filteredEdges.map(e => buildEdge(e, 0.18, 1)),
+    () => filteredEdges.map(e => buildEdge(e, 0.55, 1)),
     [filteredEdges]
   );
 
@@ -307,7 +460,7 @@ function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, i
   const [clickSelected, setClickSelected] = useState(null);
 
   const resetEdges = useCallback(() => {
-    setEdges(eds => eds.map(e => buildEdge(e, 0.18, 1)));
+    setEdges(eds => eds.map(e => buildEdge(e, 0.55, 1)));
   }, [setEdges]);
 
   const resetNodes = useCallback(() => {
@@ -386,7 +539,7 @@ function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, i
       `,
     }}>
       {/* Folder region overlay */}
-      <GroupRegions nodes={nodes} />
+      <GroupRegions nodes={nodes} filteredEdges={filteredEdges} />
 
       <ReactFlow
         nodes={nodes}
@@ -400,18 +553,24 @@ function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, i
         nodeTypes={nodeTypesMemo}
         edgeTypes={edgeTypes}
         fitView
-        fitViewOptions={{ padding: 0.16 }}
+        fitViewOptions={{
+          padding: 0.35,          // generous padding so graph doesn't hug edges
+          minZoom: 0.3,
+          maxZoom: 1.5,
+        }}
+        minZoom={0.2}
+        maxZoom={2}
         defaultEdgeOptions={{
           type: 'default',
-          markerEnd: { type: MarkerType.ArrowClosed, width: 9, height: 9, color: 'rgba(140,150,180,0.5)' },
-          style: { stroke: 'rgba(140,150,180,0.5)', strokeWidth: 1, opacity: 0.18, strokeDasharray: '5 4' },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 9, height: 9, color: 'rgba(180,190,220,0.7)' },
+          style: { stroke: 'rgba(180,190,220,0.85)', strokeWidth: 1, opacity: 0.55, strokeDasharray: '5 4' },
           animated: false,
         }}
       >
         <MiniMap nodeColor={miniMapColor} maskColor="rgba(7,8,12,0.82)" nodeStrokeWidth={0} zoomable pannable />
         <Controls />
         {/* Dots rendered over the gradient — colour matches the RF site screenshot */}
-        <Background variant="dots" gap={22} size={1.2} color="rgba(200,210,230,0.12)" />
+        <Background variant="dots" gap={22} size={1.5} color="rgba(200,210,230,0.35)" />
       </ReactFlow>
 
       <GraphLegend colorMode={colorMode} />
