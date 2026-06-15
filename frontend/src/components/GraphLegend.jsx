@@ -45,6 +45,31 @@ export default function GraphLegend({ colorMode = 'ext' }) {
         </>
       )}
 
+      {colorMode === 'risk' && (
+        <>
+          <p style={title}>Risk Score</p>
+          {/* Continuous gradient bar */}
+          <div style={gradBar} />
+          <div style={gradLabels}>
+            <span style={lbl}>Low</span>
+            <span style={lbl}>High</span>
+          </div>
+          <div style={{ marginTop: 6 }}>
+            {[
+              ['High  ≥ 0.7', 'rgb(255,30,30)'],
+              ['Med   ≥ 0.4', 'rgb(255,160,30)'],
+              ['Low   < 0.4', 'rgb(30,200,30)'],
+            ].map(([l, c]) => (
+              <div key={l} style={row}>
+                <span style={{ ...dot, background: c }} />
+                <span style={lbl}>{l}</span>
+              </div>
+            ))}
+          </div>
+          <p style={note}>Complexity × Churn</p>
+        </>
+      )}
+
       <div style={sep} />
       <div style={row}>
         <span style={{ ...line, background: T.indigo }} />
@@ -78,3 +103,15 @@ const dot = { width: 7, height: 7, borderRadius: '50%', flexShrink: 0 };
 const lbl = { fontSize: 10, color: T.textSecondary, fontFamily: 'var(--font-mono)' };
 const sep = { borderTop: `1px solid ${T.border}`, margin: '6px 0' };
 const line = { width: 16, height: 2, display: 'inline-block', borderRadius: 1, flexShrink: 0 };
+const gradBar = {
+  width: '100%', height: 8, borderRadius: 4,
+  background: 'linear-gradient(to right, rgb(30,200,30), rgb(255,160,30), rgb(255,30,30))',
+  marginBottom: 4,
+};
+const gradLabels = {
+  display: 'flex', justifyContent: 'space-between', marginBottom: 6,
+};
+const note = {
+  fontSize: 9, color: T.textMuted, fontFamily: 'var(--font-mono)',
+  marginTop: 4, marginBottom: 0, fontStyle: 'italic',
+};

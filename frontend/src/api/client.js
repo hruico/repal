@@ -60,4 +60,11 @@ export const api = {
     a.download = `${name}_metrics.csv`;
     a.click();
   },
+
+  getOverview: (repoId, force = false) =>
+    fetch(`${BASE}/repos/${repoId}/overview${force ? '?force=true' : ''}`).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.detail || 'Overview failed');
+      return data;
+    }),
 };

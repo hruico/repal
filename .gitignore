@@ -6,3 +6,5 @@ notes.md
 __pycache__/
 
 .vscode
+
+implementation_plan.md

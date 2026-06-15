@@ -30,3 +30,17 @@ def set_cached(file_id: str, content: str, summary: str):
     cache = _load()
     cache[_key(file_id, content)] = summary
     _save(cache)
+
+
+# ── Raw key cache (used for repo overviews) ────────────────────────────────────
+
+def get_cached_raw(key: str) -> str | None:
+    """Retrieve a cached value by an arbitrary pre-computed key."""
+    return _load().get(key)
+
+
+def set_cached_raw(key: str, value: str):
+    """Store a value under an arbitrary pre-computed key."""
+    cache = _load()
+    cache[key] = value
+    _save(cache)

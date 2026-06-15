@@ -1,6 +1,8 @@
 import os
+import hashlib
 import requests
-from ai.cache import get_cached, set_cached
+from collections import Counter
+from ai.cache import get_cached, set_cached, get_cached_raw, set_cached_raw
 
 MAX_CHARS = 6000
 
@@ -23,12 +25,12 @@ def summarize_file(file_id: str, content: str) -> str:
         return cached
 
     # _call_groq raises on failure, so set_cached is only reached on success
-    summary = _call_groq(content[:MAX_CHARS])
+    summary = _call_groq(PROMPT.format(code=content[:MAX_CHARS]))
     set_cached(file_id, content, summary)
     return summary
 
 
-def _call_groq(code: str) -> str:
+def _call_groq(code: str, max_tokens: int = 200) -> str:
     """Raises RuntimeError on any failure so the caller can handle it cleanly."""
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
@@ -42,9 +44,9 @@ def _call_groq(code: str) -> str:
     payload = {
         "model": "llama-3.1-8b-instant",
         "messages": [
-            {"role": "user", "content": PROMPT.format(code=code)}
+            {"role": "user", "content": code}
         ],
-        "max_tokens": 200,
+        "max_tokens": max_tokens,
         "temperature": 0.3,
     }
 
@@ -63,3 +65,94 @@ def _call_groq(code: str) -> str:
         raise RuntimeError(f"Groq API error: {detail or str(e)}")
     except Exception as e:
         raise RuntimeError(f"Summarization failed: {str(e)}")
+
+
+# ── Repo-level overview ────────────────────────────────────────────────────────
+
+OVERVIEW_PROMPT = """You are helping a developer get oriented in an unfamiliar codebase.
+Given the following structural summary, write exactly 3-4 sentences explaining:
+1) What kind of project this likely is and how it is organized.
+2) Which files or modules look most central and why.
+3) Anything a new developer should be cautious about (risk hotspots, circular dependencies, unusually large files).
+
+Be specific and practical. Do not use generic filler like "this is a well-structured project".
+
+Project summary:
+{summary}
+"""
+
+
+def _overview_cache_key(repo_id: str, graph_data: dict) -> str:
+    """
+    Key changes when the project's overall shape changes:
+    file count, total LoC, cycle count, and the sorted names of the top hotspots.
+    Trivial edits (LoC ±1) won't invalidate it — meaningful structural shifts will.
+    """
+    nodes = graph_data.get("nodes", [])
+    total_loc = sum(n["data"]["loc"] for n in nodes)
+    cycle_count = sum(1 for n in nodes if n["data"].get("in_cycle"))
+    top_ids = sorted(
+        [n["id"] for n in sorted(nodes, key=lambda x: x["data"].get("risk_score", 0), reverse=True)[:5]]
+    )
+    fingerprint = f"{repo_id}|{len(nodes)}|{total_loc}|{cycle_count}|{'_'.join(top_ids)}"
+    return "overview::" + hashlib.md5(fingerprint.encode()).hexdigest()
+
+
+def _build_overview_prompt(graph_data: dict, repo_name: str) -> str:
+    nodes = graph_data.get("nodes", [])
+    if not nodes:
+        return ""
+
+    total_loc = sum(n["data"]["loc"] for n in nodes)
+    lang_counts = Counter(n["data"]["extension"] for n in nodes)
+
+    top_depended = sorted(nodes, key=lambda n: n["data"].get("in_degree", 0), reverse=True)[:5]
+    top_risk     = sorted(nodes, key=lambda n: n["data"].get("risk_score", 0), reverse=True)[:5]
+    cycle_count  = sum(1 for n in nodes if n["data"].get("in_cycle"))
+
+    lang_str   = ", ".join(f"{ext}×{cnt}" for ext, cnt in lang_counts.most_common(6))
+    dep_names  = ", ".join(n["data"]["label"] for n in top_depended)
+    risk_names = ", ".join(
+        f"{n['data']['label']} (risk={n['data'].get('risk_score', 0):.2f})"
+        for n in top_risk
+        if n["data"].get("risk_score", 0) > 0
+    ) or "none identified"
+
+    cycle_note = (
+        f"{cycle_count} files are part of circular dependency chains — this may complicate refactoring."
+        if cycle_count > 0
+        else "No circular dependencies detected."
+    )
+
+    return (
+        f"Repository: {repo_name}\n"
+        f"- {len(nodes)} source files, {total_loc:,} total lines of code\n"
+        f"- Languages: {lang_str}\n"
+        f"- Most depended-upon files (likely core modules): {dep_names}\n"
+        f"- Highest risk files (complexity × churn): {risk_names}\n"
+        f"- {cycle_note}"
+    )
+
+
+def generate_repo_overview(graph_data: dict, repo_name: str, repo_id: str, force: bool = False) -> str:
+    """
+    Returns a plain-English overview of the repository.
+    Raises RuntimeError on AI failure — never caches errors.
+    Uses a structural hash as cache key so the same project shape
+    returns instantly without a new API call.
+    """
+    cache_key = _overview_cache_key(repo_id, graph_data)
+
+    if not force:
+        cached = get_cached_raw(cache_key)
+        if cached:
+            return cached
+
+    prompt_body = _build_overview_prompt(graph_data, repo_name)
+    if not prompt_body:
+        raise RuntimeError("No graph data available to generate overview.")
+
+    full_prompt = OVERVIEW_PROMPT.format(summary=prompt_body)
+    overview = _call_groq(full_prompt, max_tokens=300)
+    set_cached_raw(cache_key, overview)
+    return overview

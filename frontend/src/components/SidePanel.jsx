@@ -3,7 +3,7 @@ import { api } from '../api/client';
 import { T } from '../theme';
 import { nodeColor } from './FileNode';
 
-export default function SidePanel({ selectedNode, repoId, onClose }) {
+export default function SidePanel({ selectedNode, repoId, onClose, impactInfo }) {
   const [tab, setTab]         = useState('metrics');
   const [summary, setSummary] = useState('');
   const [preview, setPreview] = useState('');
@@ -106,6 +106,44 @@ export default function SidePanel({ selectedNode, repoId, onClose }) {
             </MRow>
           )}
 
+          {/* ── History / churn section ── */}
+          {(d.commits != null || d.risk_score != null) && (
+            <>
+              <p style={sectionLabel}>HISTORY</p>
+              {d.risk_score != null && (
+                <MRow label="Risk score">
+                  <RiskBadge score={d.risk_score} />
+                </MRow>
+              )}
+              {d.commits != null && (
+                <MRow label="Commits (1y)">
+                  <span style={{ fontSize: 12, color: d.commits > 20 ? T.amber : T.textSecondary, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {d.commits}
+                  </span>
+                </MRow>
+              )}
+              {d.authors != null && d.authors > 0 && (
+                <MRow label="Contributors">
+                  <span style={{ fontSize: 12, color: T.textSecondary, fontFamily: 'var(--font-mono)' }}>
+                    {d.authors}
+                  </span>
+                </MRow>
+              )}
+              {d.last_modified && (
+                <MRow label="Last changed">
+                  <span style={{ fontSize: 11, color: T.textMuted, fontFamily: 'var(--font-mono)' }}>
+                    {d.last_modified}
+                  </span>
+                </MRow>
+              )}
+              {d.commits === 0 && (
+                <p style={{ fontSize: 11, color: T.textMuted, margin: '6px 0 0', lineHeight: 1.6 }}>
+                  No commits in the last year.
+                </p>
+              )}
+            </>
+          )}
+
           {d.in_cycle && (
             <div style={cycleBox}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
@@ -115,6 +153,50 @@ export default function SidePanel({ selectedNode, repoId, onClose }) {
                 <line x1="12" y1="17" x2="12.01" y2="17"/>
               </svg>
               Part of a circular dependency
+            </div>
+          )}
+
+          {/* ── Impact summary (shown when Impact Mode was used) ── */}
+          {impactInfo && (
+            <div style={impactBox}>
+              <div style={impactHeader}>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                  stroke={T.teal} strokeWidth="2" style={{ flexShrink: 0 }}>
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                </svg>
+                <span style={{ fontWeight: 700, color: T.teal, fontSize: 11 }}>
+                  {impactInfo.impactDirection === 'dependents' ? 'Blast Radius' : 'Dependencies'}
+                </span>
+              </div>
+              {impactInfo.totalAffected === 0 ? (
+                <p style={{ fontSize: 11, color: T.textMuted, margin: '6px 0 0' }}>
+                  {impactInfo.impactDirection === 'dependents'
+                    ? 'No files depend on this — safe to change.'
+                    : 'This file imports nothing tracked.'}
+                </p>
+              ) : (
+                <>
+                  <div style={impactStat}>
+                    <span style={{ color: T.textSecondary, fontSize: 12 }}>Total affected</span>
+                    <span style={{ fontWeight: 700, color: T.teal, fontSize: 14, fontFamily: 'var(--font-mono)' }}>
+                      {impactInfo.totalAffected}
+                    </span>
+                  </div>
+                  <div style={impactStat}>
+                    <span style={{ color: T.textSecondary, fontSize: 12 }}>Direct</span>
+                    <span style={{ fontSize: 12, color: T.textPrimary, fontFamily: 'var(--font-mono)' }}>
+                      {impactInfo.directCount}
+                    </span>
+                  </div>
+                  <div style={impactStat}>
+                    <span style={{ color: T.textSecondary, fontSize: 12 }}>Transitive</span>
+                    <span style={{ fontSize: 12, color: T.textPrimary, fontFamily: 'var(--font-mono)' }}>
+                      {impactInfo.transitiveCount}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -184,6 +266,28 @@ function Tag({ color, children }) {
   );
 }
 
+function RiskBadge({ score }) {
+  const pct = Math.round(score * 100);
+  const color =
+    score >= 0.7 ? '#f87171' :
+    score >= 0.4 ? '#fbbf24' :
+    '#34d399';
+  const label =
+    score >= 0.7 ? 'High' :
+    score >= 0.4 ? 'Medium' :
+    'Low';
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      fontSize: 11, padding: '2px 8px', borderRadius: 4,
+      background: `${color}18`, color, border: `1px solid ${color}28`,
+      fontFamily: 'var(--font-mono)', fontWeight: 700,
+    }}>
+      {label} · {pct}
+    </span>
+  );
+}
+
 function Num({ value, color }) {
   return (
     <span style={{ fontSize: 13, fontWeight: 700, color, fontFamily: 'var(--font-mono)' }}>
@@ -242,6 +346,11 @@ const mrow = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
   padding: '8px 0', borderBottom: `1px solid ${T.border}`,
 };
+const sectionLabel = {
+  fontSize: 9, fontWeight: 700, color: T.textMuted,
+  textTransform: 'uppercase', letterSpacing: '0.6px',
+  margin: '14px 0 4px', fontFamily: 'var(--font-mono)',
+};
 const cycleBox = {
   marginTop: 12, padding: '8px 10px',
   background: `${T.red}0d`, border: `1px solid ${T.red}28`,
@@ -278,4 +387,17 @@ const preCode = {
   whiteSpace: 'pre', overflowX: 'auto',
   background: T.bg0,
   height: '100%', minHeight: 200,
+};
+const impactBox = {
+  marginTop: 12, padding: '10px 12px',
+  background: `${T.teal}0d`, border: `1px solid ${T.teal}28`,
+  borderRadius: 6,
+};
+const impactHeader = {
+  display: 'flex', alignItems: 'center', gap: 6,
+  marginBottom: 8,
+};
+const impactStat = {
+  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  padding: '5px 0', borderBottom: `1px solid ${T.teal}15`,
 };

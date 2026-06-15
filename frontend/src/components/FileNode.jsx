@@ -4,8 +4,9 @@ import { T } from '../theme';
 export const EXT_COLORS = T.ext;
 
 export function nodeColor(data, colorMode = 'ext') {
-  if (colorMode === 'loc') return T.heatLoc(data.loc);
-  if (colorMode === 'cc')  return T.heatCC(data.complexity);
+  if (colorMode === 'loc')  return T.heatLoc(data.loc);
+  if (colorMode === 'cc')   return T.heatCC(data.complexity);
+  if (colorMode === 'risk') return T.heatRisk(data.risk_score);
   return T.ext[data.extension] || T.textMuted;
 }
 
@@ -100,6 +101,20 @@ export default function FileNode({ data, selected, colorMode = 'ext' }) {
           opacity: 0.85,
         }}>
           cc{data.complexity}
+        </span>
+      )}
+
+      {/* Risk badge — only in risk mode on larger circles */}
+      {colorMode === 'risk' && data.risk_score != null && size >= 52 && (
+        <span style={{
+          fontSize: 7,
+          color: T.heatRisk(data.risk_score),
+          fontFamily: 'var(--font-mono)',
+          fontWeight: 700,
+          opacity: 0.95,
+          letterSpacing: '0.01em',
+        }}>
+          ⚠{(data.risk_score * 100).toFixed(0)}
         </span>
       )}
 

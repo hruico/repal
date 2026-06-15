@@ -46,4 +46,12 @@ export const T = {
     if (cc > 5)  return '#fbbf24';
     return '#34d399';
   },
+  // Continuous risk heat: 0 (green) → 0.5 (amber) → 1 (red)
+  heatRisk: (score) => {
+    if (score == null) return '#484f58';
+    const t = Math.max(0, Math.min(1, score));
+    const r = Math.round(255 * Math.min(1, t * 2));
+    const g = Math.round(200 * Math.min(1, (1 - t) * 2));
+    return `rgb(${r}, ${g}, 30)`;
+  },
 };

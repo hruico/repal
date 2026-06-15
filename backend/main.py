@@ -15,7 +15,8 @@ from analyzer.dependency_parser import get_dependencies
 from analyzer.metrics import calculate_metrics
 from analyzer.cycles import find_cycles
 from analyzer.tree_builder import build_tree
-from ai.summarizer import summarize_file
+from analyzer.git_analyzer import get_churn_data, compute_risk_score
+from ai.summarizer import summarize_file, generate_repo_overview
 
 load_dotenv()
 
@@ -105,20 +106,53 @@ def get_graph(repo_id: str):
         out_deg[e['source']] = out_deg.get(e['source'], 0) + 1
         in_deg[e['target']]  = in_deg.get(e['target'], 0) + 1
 
-    nodes = []
+    # ── Churn analysis ────────────────────────────────────────────────────────
+    # Single git log call — fails gracefully to {} on any error.
+    churn = get_churn_data(repo['path'])
+
+    # Build node list with metrics first so we can compute normalisation bounds
+    raw_nodes = []
     for f in files:
         m = calculate_metrics(f)
-        nodes.append({
+        file_churn = churn.get(f['id'], {})
+        raw_nodes.append({
             'id': f['id'],
+            'loc': m['loc'],
+            'complexity': m['complexity'],
+            'commits': file_churn.get('commits', 0),
+            'authors': len(file_churn.get('authors', set())),
+            'last_modified': file_churn.get('last_modified'),
+            'label': f['filename'],
+            'full_path': f['id'],
+            'extension': f['extension'],
+            'in_degree':  in_deg.get(f['id'], 0),
+            'out_degree': out_deg.get(f['id'], 0),
+            'in_cycle':   f['id'] in cycle_ids,
+        })
+
+    max_loc     = max((n['loc'] for n in raw_nodes), default=1)
+    max_commits = max((n['commits'] for n in raw_nodes), default=1)
+
+    nodes = []
+    for n in raw_nodes:
+        risk = compute_risk_score(
+            n['loc'], n['complexity'], n['commits'], max_loc, max_commits
+        )
+        nodes.append({
+            'id': n['id'],
             'data': {
-                'label': f['filename'],
-                'full_path': f['id'],
-                'extension': f['extension'],
-                'loc': m['loc'],
-                'complexity': m['complexity'],
-                'in_degree':  in_deg.get(f['id'], 0),
-                'out_degree': out_deg.get(f['id'], 0),
-                'in_cycle':   f['id'] in cycle_ids,
+                'label':         n['label'],
+                'full_path':     n['full_path'],
+                'extension':     n['extension'],
+                'loc':           n['loc'],
+                'complexity':    n['complexity'],
+                'in_degree':     n['in_degree'],
+                'out_degree':    n['out_degree'],
+                'in_cycle':      n['in_cycle'],
+                'commits':       n['commits'],
+                'authors':       n['authors'],
+                'last_modified': n['last_modified'],
+                'risk_score':    risk,
             },
             'position': {'x': 0, 'y': 0},
             'type': 'fileNode',
@@ -217,6 +251,86 @@ def summarize(repo_id: str, req: FileRequest):
     return {'file_id': req.file_id, 'summary': summary}
 
 
+# ── AI Repo Overview ───────────────────────────────────────────────────────────
+
+@app.get("/api/repos/{repo_id}/overview")
+def get_overview(repo_id: str, force: bool = False):
+    repo = store.get_repo(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found.")
+
+    # Re-use the full graph-building pipeline so the overview has churn data
+    files = traverse_directory(repo['path'])
+    if not files:
+        raise HTTPException(status_code=404, detail="No supported source files found.")
+
+    if len(files) > MAX_FILES:
+        files = sorted(files, key=lambda f: f['id'])[:MAX_FILES]
+
+    edges_raw = []
+    for f in files:
+        for dep_id in get_dependencies(f, files):
+            edges_raw.append({'source': f['id'], 'target': dep_id})
+
+    cycle_ids = find_cycles(edges_raw)
+    in_deg  = {f['id']: 0 for f in files}
+    out_deg = {f['id']: 0 for f in files}
+    for e in edges_raw:
+        out_deg[e['source']] = out_deg.get(e['source'], 0) + 1
+        in_deg[e['target']]  = in_deg.get(e['target'], 0) + 1
+
+    churn = get_churn_data(repo['path'])
+    raw_nodes = []
+    for f in files:
+        m = calculate_metrics(f)
+        fc = churn.get(f['id'], {})
+        raw_nodes.append({
+            'id': f['id'],
+            'loc': m['loc'],
+            'complexity': m['complexity'],
+            'commits': fc.get('commits', 0),
+            'in_degree':  in_deg.get(f['id'], 0),
+            'in_cycle':   f['id'] in cycle_ids,
+            'label': f['filename'],
+            'extension': f['extension'],
+        })
+
+    max_loc     = max((n['loc'] for n in raw_nodes), default=1)
+    max_commits = max((n['commits'] for n in raw_nodes), default=1)
+
+    # Minimal graph_data shape that generate_repo_overview expects
+    graph_data = {
+        "nodes": [
+            {
+                "id": n['id'],
+                "data": {
+                    "label":      n['label'],
+                    "extension":  n['extension'],
+                    "loc":        n['loc'],
+                    "in_degree":  n['in_degree'],
+                    "in_cycle":   n['in_cycle'],
+                    "risk_score": compute_risk_score(
+                        n['loc'], n['complexity'], n['commits'], max_loc, max_commits
+                    ),
+                },
+            }
+            for n in raw_nodes
+        ]
+    }
+
+    try:
+        overview = generate_repo_overview(
+            graph_data=graph_data,
+            repo_name=repo['name'],
+            repo_id=repo_id,
+            force=force,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    return {'repo_id': repo_id, 'overview': overview}
+
+
 # ── CSV Export ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/repos/{repo_id}/export")
@@ -225,12 +339,38 @@ def export_csv(repo_id: str):
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found.")
     files = traverse_directory(repo['path'])
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(['file', 'extension', 'loc', 'complexity'])
+    churn = get_churn_data(repo['path'])
+
+    max_loc     = 1
+    max_commits = 1
+    metrics_cache = {}
     for f in files:
         m = calculate_metrics(f)
-        writer.writerow([f['id'], f['extension'], m['loc'], m['complexity'] or ''])
+        metrics_cache[f['id']] = m
+        if m['loc'] > max_loc:
+            max_loc = m['loc']
+        c = churn.get(f['id'], {}).get('commits', 0)
+        if c > max_commits:
+            max_commits = c
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['file', 'extension', 'loc', 'complexity', 'commits', 'authors', 'last_modified', 'risk_score'])
+    for f in files:
+        m = metrics_cache[f['id']]
+        fc = churn.get(f['id'], {})
+        risk = compute_risk_score(
+            m['loc'], m['complexity'],
+            fc.get('commits', 0), max_loc, max_commits
+        )
+        writer.writerow([
+            f['id'], f['extension'],
+            m['loc'], m['complexity'] or '',
+            fc.get('commits', 0),
+            len(fc.get('authors', set())),
+            fc.get('last_modified', ''),
+            risk,
+        ])
     output.seek(0)
     return StreamingResponse(
         iter([output.getvalue()]),

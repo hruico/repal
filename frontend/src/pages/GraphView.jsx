@@ -5,6 +5,7 @@ import { T } from '../theme';
 import GraphCanvas from '../components/GraphCanvas';
 import SidePanel from '../components/SidePanel';
 import FolderTree from '../components/FolderTree';
+import OverviewPanel from '../components/OverviewPanel';
 
 export default function GraphView() {
   const { repoId } = useParams();
@@ -13,15 +14,34 @@ export default function GraphView() {
   const [graphData, setGraphData] = useState(null);
   const [treeData,  setTreeData]  = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [impactInfo,   setImpactInfo]   = useState(null);
   const [search,    setSearch]    = useState('');
   const [error,     setError]     = useState('');
   const [loading,   setLoading]   = useState(true);
   const [colorMode, setColorMode] = useState('ext');
   const [focusId,   setFocusId]   = useState(null);
   const [showTree,  setShowTree]  = useState(false);
+  const [impactMode,      setImpactMode]      = useState(false);
+  const [impactDirection, setImpactDirection] = useState('dependents');
+
+  // ── Overview state ──────────────────────────────────────────────────────────
+  const [overview,          setOverview]          = useState('');
+  const [overviewLoading,   setOverviewLoading]   = useState(false);
+  const [overviewError,     setOverviewError]     = useState('');
+  const [overviewCollapsed, setOverviewCollapsed] = useState(false);
+
+  const fetchOverview = useCallback((force = false) => {
+    setOverviewLoading(true);
+    setOverviewError('');
+    api.getOverview(repoId, force)
+      .then(res => setOverview(res.overview))
+      .catch(e => setOverviewError(e.message))
+      .finally(() => setOverviewLoading(false));
+  }, [repoId]);
 
   const loadGraph = useCallback(() => {
     setLoading(true); setError(''); setSelectedNode(null); setFocusId(null);
+    setImpactInfo(null); setImpactMode(false);
     Promise.all([api.getGraph(repoId), api.getTree(repoId)])
       .then(([g, t]) => { setGraphData(g); setTreeData(t.tree); })
       .catch(e => setError(e.message))
@@ -29,9 +49,14 @@ export default function GraphView() {
   }, [repoId]);
 
   useEffect(() => { loadGraph(); }, [loadGraph]);
+  useEffect(() => { fetchOverview(); }, [fetchOverview]);
 
   useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') { setSelectedNode(null); setFocusId(null); } };
+    const onKey = e => {
+      if (e.key === 'Escape') {
+        setSelectedNode(null); setFocusId(null); setImpactInfo(null);
+      }
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
@@ -56,8 +81,9 @@ export default function GraphView() {
 
   const stats = graphData?.stats;
 
-  const handleNodeClick = (node) => {
+  const handleNodeClick = (node, impactData) => {
     setSelectedNode(node);
+    setImpactInfo(impactData ?? null);
   };
 
   const handleTreeClick = (id) => {
@@ -133,7 +159,40 @@ export default function GraphView() {
             <option value="ext">Language</option>
             <option value="loc">LoC heat</option>
             <option value="cc">CC heat</option>
+            <option value="risk">Risk hotspots</option>
           </select>
+
+          {/* Impact Mode toggle */}
+          <button
+            onClick={() => { setImpactMode(m => !m); setImpactInfo(null); }}
+            style={{
+              ...iconBtn,
+              color: impactMode ? T.teal : T.textSecondary,
+              background: impactMode ? `${T.teal}15` : 'transparent',
+              borderColor: impactMode ? `${T.teal}50` : T.border,
+            }}
+            title="Impact Mode — blast radius analysis"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+            </svg>
+            Impact
+          </button>
+
+          {/* Impact direction — only visible when impact mode is on */}
+          {impactMode && (
+            <select
+              value={impactDirection}
+              onChange={e => { setImpactDirection(e.target.value); setImpactInfo(null); }}
+              style={{ ...sel, borderColor: `${T.teal}50`, color: T.teal }}
+              title="Traversal direction"
+            >
+              <option value="dependents">Who breaks? ↓</option>
+              <option value="dependencies">Needs what? ↑</option>
+            </select>
+          )}
 
           {/* Tree toggle */}
           <button
@@ -175,6 +234,16 @@ export default function GraphView() {
           </button>
         </div>
       </header>
+
+      {/* ── Overview panel ── */}
+      <OverviewPanel
+        overview={overview}
+        loading={overviewLoading}
+        error={overviewError}
+        collapsed={overviewCollapsed}
+        onToggle={() => setOverviewCollapsed(c => !c)}
+        onRegenerate={() => { setOverview(''); fetchOverview(true); }}
+      />
 
       {/* ── Body ── */}
       <div style={body}>
@@ -221,6 +290,8 @@ export default function GraphView() {
               rawEdges={visibleEdges}
               colorMode={colorMode}
               onNodeClick={handleNodeClick}
+              impactMode={impactMode}
+              impactDirection={impactDirection}
             />
           )}
         </div>
@@ -229,7 +300,8 @@ export default function GraphView() {
         <SidePanel
           selectedNode={selectedNode}
           repoId={repoId}
-          onClose={() => setSelectedNode(null)}
+          impactInfo={impactInfo}
+          onClose={() => { setSelectedNode(null); setImpactInfo(null); }}
         />
       </div>
 
@@ -238,6 +310,11 @@ export default function GraphView() {
         <div style={hintBar}>
           Scroll to zoom · Drag to pan · Click node to inspect ·{' '}
           <kbd style={kbd}>Esc</kbd> to deselect
+          {impactMode && (
+            <span style={{ marginLeft: 10, color: T.teal, fontWeight: 600 }}>
+              · Impact Mode active — click a node to trace blast radius
+            </span>
+          )}
           {stats && (
             <span style={{ marginLeft: 16, color: T.textMuted }}>
               {stats.total_loc.toLocaleString()} total LoC
