@@ -380,11 +380,20 @@ def export_csv(repo_id: str):
 
 
 # ── Static Frontend (Production) ───────────────────────────────────────────────
-# Mount the built React app. Using StaticFiles(html=True) means it serves
-# index.html for unknown paths automatically — no catch-all GET route needed,
-# so POST routes are never shadowed by a broad GET handler.
+# Mount /assets for JS/CSS chunks, then serve index.html only for GET requests
+# on non-API paths. Using @app.api_route with methods=["GET"] means POST/DELETE
+# routes defined above are never shadowed.
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), '..', 'frontend', 'dist')
 
 if os.path.exists(STATIC_DIR):
-    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="frontend")
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    @app.api_route("/{full_path:path}", methods=["GET"])
+    def serve_frontend(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="Not found.")
+        index = os.path.join(STATIC_DIR, "index.html")
+        if os.path.exists(index):
+            return FileResponse(index)
+        raise HTTPException(status_code=404, detail="Frontend not built.")
