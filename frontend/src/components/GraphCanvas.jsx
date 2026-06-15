@@ -12,11 +12,11 @@ import GraphLegend from './GraphLegend';
 
 const edgeTypes = { default: BezierEdge };
 
-// ── Node dimensions (must match FileNode.jsx) ─────────────────────────────────
-const NODE_W = 140;   // actual rendered width  + margin
-const NODE_H = 70;    // actual rendered height + margin
-const COL_GAP = 90;   // horizontal gap between columns
-const ROW_GAP = 22;   // vertical gap between rows
+// ── Node dimensions (must match FileNode.jsx exactly) ────────────────────────
+const NODE_W  = 140;   // card width
+const NODE_H  = 78;    // card height — sized for 3 rows + accent bar + padding
+const COL_GAP = 100;   // horizontal gap between columns
+const ROW_GAP = 32;    // vertical gap between rows in the same column
 
 // ── Layered (hierarchical) layout ────────────────────────────────────────────
 // Groups nodes into topological layers (depth from sources).
@@ -95,6 +95,8 @@ function applyLayeredLayout(nodes, edges) {
     layerNodes.forEach((node, rowIdx) => {
       positioned.push({
         ...node,
+        width:  NODE_W,   // tell React Flow the exact footprint
+        height: NODE_H,
         position: {
           x: colX,
           y: startY + rowIdx * (NODE_H + ROW_GAP),
@@ -374,10 +376,15 @@ function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, i
   [colorMode]);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-      {/* Canvas gradient — reddish-purple glow like the RF site */}
-      <CanvasGradient />
-
+    <div style={{
+      width: '100%', height: '100%', position: 'relative',
+      // Base canvas colour + gradient here — Background dots render on top
+      background: `
+        radial-gradient(ellipse 55% 45% at 68% 38%, rgba(110,30,80,0.22) 0%, transparent 70%),
+        radial-gradient(ellipse 40% 35% at 30% 65%, rgba(40,20,90,0.18) 0%, transparent 65%),
+        #080a0f
+      `,
+    }}>
       {/* Folder region overlay */}
       <GroupRegions nodes={nodes} />
 
@@ -400,11 +407,11 @@ function CanvasInner({ rawNodes, rawEdges, colorMode, onNodeClick, impactMode, i
           style: { stroke: 'rgba(140,150,180,0.5)', strokeWidth: 1, opacity: 0.18, strokeDasharray: '5 4' },
           animated: false,
         }}
-        style={{ background: 'transparent' }}
       >
         <MiniMap nodeColor={miniMapColor} maskColor="rgba(7,8,12,0.82)" nodeStrokeWidth={0} zoomable pannable />
         <Controls />
-        <Background variant="dots" gap={24} size={1} color="rgba(255,255,255,0.055)" />
+        {/* Dots rendered over the gradient — colour matches the RF site screenshot */}
+        <Background variant="dots" gap={22} size={1.2} color="rgba(200,210,230,0.12)" />
       </ReactFlow>
 
       <GraphLegend colorMode={colorMode} />

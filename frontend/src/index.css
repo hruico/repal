@@ -81,6 +81,7 @@ input, select {
 
 /* ── React Flow dark overrides ──────────────────────────────────────────────── */
 .react-flow__background {
+  /* Keep the background visible so the dot grid renders */
   background: transparent !important;
 }
 .react-flow__minimap {
@@ -141,7 +142,7 @@ input, select {
   100% { opacity: 1; transform: translateX(0)    scale(1); }
 }
 
-/* ── Canvas transparency (let CanvasGradient show through) ─────────────────── */
+/* ── Canvas transparency — let wrapper gradient show through ───────────────── */
 .react-flow__pane,
 .react-flow__renderer,
 .react-flow__viewport {
