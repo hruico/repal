@@ -9,3 +9,6 @@ __pycache__/
 
 implementation_plan.md
 ui_polish_plan.md
+
+backend/data/repos.json
+backend/data/summary_cache.json
